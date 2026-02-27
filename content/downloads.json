@@ -1,0 +1,10 @@
+{
+  "files": [
+    {
+      "name": "sample.txt",
+      "description": "Example file for download",
+      "path": "sample.txt",
+      "size": "0 B"
+    }
+  ]
+}

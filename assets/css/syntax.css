@@ -1,0 +1,17 @@
+/* Syntax highlighting for code blocks - dark theme */
+.content pre code {
+  color: #e0e4e8;
+}
+
+.content pre .keyword { color: #c678dd; }
+.content pre .string { color: #98c379; }
+.content pre .number { color: #d19a66; }
+.content pre .comment { color: #5c6370; font-style: italic; }
+.content pre .function { color: #61afef; }
+.content pre .operator { color: #56b6c2; }
+.content pre .punctuation { color: #abb2bf; }
+
+/* Fallback: if no spans, pre code stays readable */
+.content pre {
+  color: #e0e4e8;
+}

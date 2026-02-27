@@ -1,0 +1,1 @@
+Placeholder for content/downloads/sample.txt so the file exists. Replace with real files and update downloads.json (name, path, size).

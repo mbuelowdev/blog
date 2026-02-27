@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{title}} | mbuelow.dev</title>
+  <link rel="stylesheet" href="{{base}}css/main.css" />
+  <link rel="stylesheet" href="{{base}}css/syntax.css" />
+</head>
+<body>
+  <button type="button" class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <aside class="sidebar" id="sidebar">
+    <nav class="nav">
+      <a href="{{base}}index.html" class="nav-link{{#activeHome}} active{{/activeHome}}">Home</a>
+      <a href="{{base}}blog/index.html" class="nav-link{{#activeBlog}} active{{/activeBlog}}">Blog</a>
+      <a href="{{base}}projects/index.html" class="nav-link{{#activeProjects}} active{{/activeProjects}}">Projects</a>
+      <a href="{{base}}cheatsheets/index.html" class="nav-link{{#activeCheatsheets}} active{{/activeCheatsheets}}">Cheat Sheets</a>
+      <a href="{{base}}ctf/index.html" class="nav-link{{#activeCtf}} active{{/activeCtf}}">CTF</a>
+      <a href="{{base}}re-tips/index.html" class="nav-link{{#activeReTips}} active{{/activeReTips}}">RE Tips</a>
+      <a href="{{base}}downloads/index.html" class="nav-link{{#activeDownloads}} active{{/activeDownloads}}">Downloads</a>
+      <a href="{{base}}contact/index.html" class="nav-link{{#activeContact}} active{{/activeContact}}">Contact</a>
+    </nav>
+  </aside>
+  <main class="main">
+    {{{breadcrumb}}}
+    <header class="page-header">
+      <h1 class="page-title">{{title}}</h1>
+      <p class="last-refreshed">Last refreshed: {{lastRefreshed}}</p>
+    </header>
+    <div class="content">
+      {{{body}}}
+    </div>
+  </main>
+  <script src="{{base}}js/main.js"></script>
+</body>
+</html>

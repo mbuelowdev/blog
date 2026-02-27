@@ -1,0 +1,333 @@
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { marked } from "marked";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, "..");
+const CONTENT = path.join(ROOT, "content");
+const TEMPLATES = path.join(ROOT, "templates");
+const ASSETS = path.join(ROOT, "assets");
+const DIST = path.join(ROOT, "dist");
+
+const LAST_REFRESHED = new Date().toISOString().replace("T", " ").slice(0, 19);
+
+function ensureDir(dir) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
+function parseFrontMatter(raw) {
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+  if (!match) return { meta: {}, body: raw };
+  const meta = {};
+  for (const line of match[1].split("\n")) {
+    const colon = line.indexOf(":");
+    if (colon > 0) {
+      const key = line.slice(0, colon).trim();
+      const value = line.slice(colon + 1).trim();
+      meta[key] = value;
+    }
+  }
+  return { meta, body: match[2] };
+}
+
+function renderLayout(opts) {
+  let html = fs.readFileSync(path.join(TEMPLATES, "layout.html"), "utf8");
+  html = html.replace(/\{\{title\}\}/g, opts.title || "mbuelow.dev");
+  html = html.replace(/\{\{base\}\}/g, opts.base ?? "");
+  html = html.replace(/\{\{lastRefreshed\}\}/g, opts.lastRefreshed ?? LAST_REFRESHED);
+  html = html.replace(/\{\{\{body\}\}\}/g, opts.body ?? "");
+  html = html.replace(/\{\{\{breadcrumb\}\}\}/g, opts.breadcrumb ?? "");
+  const active = opts.active ?? {};
+  for (const key of [
+    "activeHome",
+    "activeBlog",
+    "activeProjects",
+    "activeCheatsheets",
+    "activeCtf",
+    "activeReTips",
+    "activeDownloads",
+    "activeContact",
+  ]) {
+    const regex = new RegExp(
+      `\\{\\{#${key}\\}\\} active\\{\\{/${key}\\}\\}`,
+      "g"
+    );
+    html = html.replace(regex, active[key] ? " active" : "");
+  }
+  return html;
+}
+
+function getBase(outputPath) {
+  const segments = outputPath.split("/").filter(Boolean);
+  if (segments.length <= 1) return "";
+  return "../".repeat(segments.length - 1);
+}
+
+const SECTION_LABELS = {
+  blog: "Blog",
+  projects: "Projects",
+  cheatsheets: "Cheat Sheets",
+  ctf: "CTF",
+  "re-tips": "RE Tips",
+  downloads: "Downloads",
+  contact: "Contact",
+};
+
+function getBreadcrumb(outputPath, title) {
+  const segments = outputPath.split("/").filter(Boolean);
+  if (segments.length === 0) return [];
+
+  const dirDepth = segments.length - 1;
+  const homeHref =
+    dirDepth === 0 ? "index.html" : "../".repeat(dirDepth) + "index.html";
+  const section = segments[0];
+  const sectionLabel = SECTION_LABELS[section] || section;
+  const isIndexPage = segments[1] === "index.html";
+
+  /* Home page: no breadcrumb. */
+  if (segments.length === 1 && segments[0] === "index.html") return [];
+
+  /* Section index: "/" (link to home) > section name. */
+  if (isIndexPage)
+    return [
+      { label: "/", href: homeHref },
+      { label: sectionLabel, href: "" },
+    ];
+
+  /* Subpage: "/" (link to home) > section > current page. */
+  return [
+    { label: "/", href: homeHref },
+    { label: sectionLabel, href: "index.html" },
+    { label: title, href: "" },
+  ];
+}
+
+function renderBreadcrumbHtml(outputPath, title) {
+  const items = getBreadcrumb(outputPath, title);
+  if (items.length === 0) return "";
+  const parts = [];
+  for (const item of items) {
+    if (parts.length > 0) parts.push('<span class="breadcrumb-sep">›</span>');
+    if (item.href)
+      parts.push(
+        `<a href="${escapeHtml(item.href)}" class="breadcrumb-link">${escapeHtml(item.label)}</a>`
+      );
+    else
+      parts.push(
+        `<span class="breadcrumb-current">${escapeHtml(item.label)}</span>`
+      );
+  }
+  return `<nav class="breadcrumb" aria-label="Breadcrumb">${parts.join("")}</nav>`;
+}
+
+function writePage(outputPath, title, bodyHtml, active = {}) {
+  const outFile = path.join(DIST, outputPath);
+  ensureDir(path.dirname(outFile));
+  const base = getBase(outputPath);
+  const breadcrumbHtml = renderBreadcrumbHtml(outputPath, title);
+  const html = renderLayout({
+    title,
+    base,
+    lastRefreshed: LAST_REFRESHED,
+    body: bodyHtml,
+    active,
+    breadcrumb: breadcrumbHtml,
+  });
+  fs.writeFileSync(outFile, html, "utf8");
+}
+
+function build() {
+  if (fs.existsSync(DIST)) fs.rmSync(DIST, { recursive: true });
+  ensureDir(DIST);
+
+  // Copy assets
+  for (const sub of ["css", "js", "fonts"]) {
+    const src = path.join(ASSETS, sub);
+    const dest = path.join(DIST, sub);
+    if (fs.existsSync(src)) {
+      ensureDir(dest);
+      for (const name of fs.readdirSync(src)) {
+        fs.copyFileSync(path.join(src, name), path.join(dest, name));
+      }
+    }
+  }
+
+  // Home
+  const homePath = path.join(CONTENT, "home.md");
+  const homeRaw = fs.existsSync(homePath) ? fs.readFileSync(homePath, "utf8") : "# Home\n\nWelcome.";
+  const homeParsed = parseFrontMatter(homeRaw);
+  const homeTitle = homeParsed.meta.title || "Home";
+  writePage(
+    "index.html",
+    homeTitle,
+    marked.parse(homeParsed.body),
+    { activeHome: true }
+  );
+
+  // Blog index + posts
+  const blogDir = path.join(CONTENT, "blog");
+  const blogPosts = fs.existsSync(blogDir)
+    ? fs.readdirSync(blogDir).filter((f) => f.endsWith(".md"))
+    : [];
+  const posts = [];
+  for (const file of blogPosts) {
+    const raw = fs.readFileSync(path.join(blogDir, file), "utf8");
+    const { meta, body } = parseFrontMatter(raw);
+    const slug = path.basename(file, ".md");
+    posts.push({
+      slug,
+      title: meta.title || slug,
+      date: meta.date || "",
+      excerpt: meta.excerpt || body.slice(0, 160).replace(/\n/g, " ") + "...",
+    });
+    writePage(
+      `blog/${slug}.html`,
+      meta.title || slug,
+      marked.parse(body),
+      { activeBlog: true }
+    );
+  }
+  posts.sort((a, b) => (b.date > a.date ? 1 : -1));
+  let blogIndexBody = "<ul class=\"post-list\">";
+  for (const p of posts) {
+    blogIndexBody += `<li><a href="${getBase("blog/index.html")}blog/${p.slug}.html">${escapeHtml(p.title)}</a>${p.date ? ` <span class=\"date\">${escapeHtml(p.date)}</span>` : ""}</li>`;
+  }
+  blogIndexBody += "</ul>";
+  writePage("blog/index.html", "Blog", blogIndexBody, { activeBlog: true });
+
+  // Projects index
+  const projectsDir = path.join(CONTENT, "projects");
+  const projectFiles = fs.existsSync(projectsDir)
+    ? fs.readdirSync(projectsDir).filter((f) => f.endsWith(".md"))
+    : [];
+  let projectsBody = "";
+  for (const file of projectFiles) {
+    const raw = fs.readFileSync(path.join(projectsDir, file), "utf8");
+    const { meta, body } = parseFrontMatter(raw);
+    projectsBody += `<section class=\"project\"><h2>${escapeHtml(meta.title || file)}</h2>${marked.parse(body)}</section>`;
+  }
+  if (!projectsBody) projectsBody = "<p>No projects yet.</p>";
+  writePage("projects/index.html", "Projects", projectsBody, {
+    activeProjects: true,
+  });
+
+  // Cheat sheets index + x86, binary-ninja
+  ensureDir(path.join(DIST, "cheatsheets"));
+  const csIndexBody = `
+    <ul>
+      <li><a href="x86.html">x86 Instruction Set Lookup</a></li>
+      <li><a href="binary-ninja.html">Binary Ninja Disassembly Symbols</a></li>
+    </ul>`;
+  writePage("cheatsheets/index.html", "Cheat Sheets", csIndexBody, {
+    activeCheatsheets: true,
+  });
+
+  const x86Path = path.join(CONTENT, "cheatsheets", "x86.md");
+  if (fs.existsSync(x86Path)) {
+    const { body } = parseFrontMatter(fs.readFileSync(x86Path, "utf8"));
+    writePage("cheatsheets/x86.html", "x86 Instruction Set", marked.parse(body), {
+      activeCheatsheets: true,
+    });
+  }
+
+  const bnPath = path.join(CONTENT, "cheatsheets", "binary-ninja.md");
+  if (fs.existsSync(bnPath)) {
+    const { body } = parseFrontMatter(fs.readFileSync(bnPath, "utf8"));
+    writePage(
+      "cheatsheets/binary-ninja.html",
+      "Binary Ninja Symbols",
+      marked.parse(body),
+      { activeCheatsheets: true }
+    );
+  }
+
+  // CTF index + writeups
+  const ctfDir = path.join(CONTENT, "ctf");
+  const ctfFiles = fs.existsSync(ctfDir)
+    ? fs.readdirSync(ctfDir).filter((f) => f.endsWith(".md"))
+    : [];
+  let ctfIndexBody = "<ul>";
+  for (const file of ctfFiles) {
+    const raw = fs.readFileSync(path.join(ctfDir, file), "utf8");
+    const { meta } = parseFrontMatter(raw);
+    const slug = path.basename(file, ".md");
+    ctfIndexBody += `<li><a href="${slug}.html">${escapeHtml(meta.title || slug)}</a></li>`;
+  }
+  ctfIndexBody += "</ul>";
+  writePage("ctf/index.html", "CTF Writeups", ctfIndexBody, { activeCtf: true });
+
+  for (const file of ctfFiles) {
+    const raw = fs.readFileSync(path.join(ctfDir, file), "utf8");
+    const { meta, body } = parseFrontMatter(raw);
+    const slug = path.basename(file, ".md");
+    writePage(`ctf/${slug}.html`, meta.title || slug, marked.parse(body), {
+      activeCtf: true,
+    });
+  }
+
+  // RE Tips
+  const reTipsPath = path.join(CONTENT, "re-tips.md");
+  const reTipsBody = fs.existsSync(reTipsPath)
+    ? marked.parse(
+        parseFrontMatter(fs.readFileSync(reTipsPath, "utf8")).body
+      )
+    : "<p>Tips coming soon.</p>";
+  writePage("re-tips/index.html", "RE Tips & Tricks", reTipsBody, {
+    activeReTips: true,
+  });
+
+  // Downloads: from content/downloads.json
+  const downloadsPath = path.join(CONTENT, "downloads.json");
+  let downloadsBody = "<p>No downloads yet.</p>";
+  if (fs.existsSync(downloadsPath)) {
+    const list = JSON.parse(fs.readFileSync(downloadsPath, "utf8"));
+    const files = Array.isArray(list) ? list : list.files || [];
+    downloadsBody = `<table><thead><tr><th>Name</th><th>Description</th><th>Size</th><th></th></tr></thead><tbody>`;
+    for (const f of files) {
+      const size = f.size != null ? f.size : "—";
+      const url = (f.path || f.url || "#").startsWith("http") ? f.path || f.url : "files/" + (f.path || f.url || "");
+      downloadsBody += `<tr><td>${escapeHtml(f.name)}</td><td>${escapeHtml(f.description || "")}</td><td>${escapeHtml(size)}</td><td><a href="${escapeHtml(url)}" download>Download</a></td></tr>`;
+    }
+    downloadsBody += "</tbody></table>";
+  }
+  ensureDir(path.join(DIST, "downloads"));
+  writePage("downloads/index.html", "Downloads", downloadsBody, {
+    activeDownloads: true,
+  });
+  const downloadsFilesSrc = path.join(CONTENT, "downloads");
+  const downloadsFilesDest = path.join(DIST, "downloads", "files");
+  ensureDir(downloadsFilesDest);
+  if (fs.existsSync(downloadsFilesSrc)) {
+    for (const name of fs.readdirSync(downloadsFilesSrc)) {
+      const src = path.join(downloadsFilesSrc, name);
+      if (fs.statSync(src).isFile())
+        fs.copyFileSync(src, path.join(downloadsFilesDest, name));
+    }
+  }
+
+  // Contact
+  const contactPath = path.join(CONTENT, "contact", "index.md");
+  const contactBody = fs.existsSync(contactPath)
+    ? marked.parse(
+        parseFrontMatter(fs.readFileSync(contactPath, "utf8")).body
+      )
+    : `<p>Reach out via <a href="https://github.com/mbuelowdev">GitHub</a>. LinkedIn coming soon.</p>`;
+  ensureDir(path.join(DIST, "contact"));
+  writePage("contact/index.html", "Contact", contactBody, {
+    activeContact: true,
+  });
+
+  console.log("Build done. Output in dist/");
+}
+
+function escapeHtml(s) {
+  if (!s) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+build();

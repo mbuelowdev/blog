@@ -1,0 +1,13 @@
+{
+  "name": "blog",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build-site": "node scripts/build.mjs"
+  },
+  "dependencies": {
+    "marked": "^12.0.0"
+  }
+}
