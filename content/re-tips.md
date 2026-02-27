@@ -1,5 +1,5 @@
 ---
-title: RE Tips & Tricks
+title: Reversing
 ---
 
 # Reverse engineering tips & tricks

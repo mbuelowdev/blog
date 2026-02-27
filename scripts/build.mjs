@@ -68,8 +68,8 @@ const SECTION_LABELS = {
   blog: "Blog",
   projects: "Projects",
   cheatsheets: "Cheat Sheets",
-  ctf: "CTF",
-  "re-tips": "RE Tips",
+  ctf: "CTF-Challenges",
+  "re-tips": "Reversing",
   downloads: "Downloads",
   contact: "Contact",
 };
@@ -255,7 +255,7 @@ function build() {
     ctfIndexBody += `<li><a href="${slug}.html">${escapeHtml(meta.title || slug)}</a></li>`;
   }
   ctfIndexBody += "</ul>";
-  writePage("ctf/index.html", "CTF Writeups", ctfIndexBody, { activeCtf: true });
+  writePage("ctf/index.html", "CTF-Challenges", ctfIndexBody, { activeCtf: true });
 
   for (const file of ctfFiles) {
     const raw = fs.readFileSync(path.join(ctfDir, file), "utf8");
@@ -266,14 +266,14 @@ function build() {
     });
   }
 
-  // RE Tips
+  // Reversing
   const reTipsPath = path.join(CONTENT, "re-tips.md");
   const reTipsBody = fs.existsSync(reTipsPath)
     ? marked.parse(
         parseFrontMatter(fs.readFileSync(reTipsPath, "utf8")).body
       )
     : "<p>Tips coming soon.</p>";
-  writePage("re-tips/index.html", "RE Tips & Tricks", reTipsBody, {
+  writePage("re-tips/index.html", "Reversing", reTipsBody, {
     activeReTips: true,
   });
 
