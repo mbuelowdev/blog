@@ -93,6 +93,18 @@ body {
   gap: 0.25rem;
 }
 
+.nav-section {
+  margin: 0.85rem 1.25rem 0.15rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
 .nav-link {
   padding: 0.5rem 1.25rem;
   color: var(--text-muted);
