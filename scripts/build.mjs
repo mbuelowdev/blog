@@ -221,7 +221,7 @@ Last login: Fri Jul  7 07:00:07 2023 from 192.168.6.66</pre>
 <span class="home-terminal-prompt">mbuelow@dev:~$ </span>pwd
 /home/mbuelow
 <span class="home-terminal-prompt">mbuelow@dev:~$ </span>ls -al
-total 8
+total ${Math.max(8, homeDirs.length)}
 ${homeLsLinesStr}
 <span class="home-terminal-prompt">mbuelow@dev:~$ </span><span class="home-terminal-cursor"></span></pre>
 </div>`;
@@ -286,7 +286,7 @@ ${homeLsLinesStr}
 <pre class="home-terminal-session"><span class="home-terminal-prompt">mbuelow@dev:~/blog$ </span>pwd
 /home/mbuelow/blog
 <span class="home-terminal-prompt">mbuelow@dev:~/blog$ </span>ls -al
-total ${Math.max(8, Math.ceil(blogLsEntries.reduce((s, e) => s + e.size, 0) / 1024))}
+total ${blogLsEntries.length}
 ${blogLsLines.join("\n")}
 <span class="home-terminal-prompt">mbuelow@dev:~/blog$ </span><span class="home-terminal-cursor"></span></pre>
 </div>`;
@@ -298,146 +298,245 @@ ${blogLsLines.join("\n")}
     ? fs.readdirSync(projectsDir).filter((f) => f.endsWith(".md"))
     : [];
   const projectList = [];
+  const projectLsEntries = [];
   for (const file of projectFiles) {
-    const raw = fs.readFileSync(path.join(projectsDir, file), "utf8");
+    const fullPath = path.join(projectsDir, file);
+    const stat = fs.statSync(fullPath);
+    const raw = fs.readFileSync(fullPath, "utf8");
     const { meta, body } = parseFrontMatter(raw);
     const slug = path.basename(file, ".md");
     projectList.push({
       slug,
       title: meta.title || slug,
       description: meta.description || body.slice(0, 200).replace(/\n/g, " ").trim() + (body.length > 200 ? "…" : ""),
-      thumbnail: meta.thumbnail || "images/project-placeholder.png",
     });
+    projectLsEntries.push({
+      name: file,
+      slug,
+      size: stat.size,
+      mtime: stat.mtime,
+    });
+  }
+  projectLsEntries.sort((a, b) => a.name.localeCompare(b.name));
+  for (const p of projectList) {
+    const raw = fs.readFileSync(path.join(projectsDir, `${p.slug}.md`), "utf8");
+    const { meta, body } = parseFrontMatter(raw);
     writePage(
-      `projects/${slug}.html`,
-      meta.title || slug,
+      `projects/${p.slug}.html`,
+      meta.title || p.slug,
       marked.parse(body),
       { activeProjects: true }
     );
   }
-  let projectsIndexBody = "";
-  if (projectList.length === 0) {
-    projectsIndexBody = "<p>No projects yet.</p>";
-  } else {
-    projectsIndexBody = '<p class="projects-intro">A list of projects I\'ve done in the past or still working on right now.</p><ul class="project-list">';
-    for (const p of projectList) {
-      const thumbHtml = `<span class="project-item-thumb"><img src="${escapeHtml(p.thumbnail)}" alt="" loading="lazy"></span>`;
-      projectsIndexBody += `<li class="project-item"><a href="${p.slug}.html" class="project-item-link">${thumbHtml}<span class="project-item-content"><span class="project-item-title">${escapeHtml(p.title)}</span>${p.description ? `<p class="project-item-desc">${escapeHtml(p.description)}</p>` : ""}</span></a></li>`;
-    }
-    projectsIndexBody += "</ul>";
-  }
-  writePage("projects/index.html", "Projects", projectsIndexBody, {
-    activeProjects: true,
-  });
 
-  // Cheat sheets index + x86, binary-ninja (output under cheat-sheets/)
+  // Projects index: CLI style (pwd -> /home/mbuelow/projects, ls -al with real sizes)
+  const projectLsLines = [
+    "drwxr-xr-x  2 mbuelow mbuelow  4096 Mar 12 14:23 .",
+    "drwxr-xr-x  3 mbuelow mbuelow  4096 Jan  8 09:41 ..",
+    ...projectLsEntries.map((e) => {
+      const href = escapeHtml(e.slug + ".html");
+      const name = escapeHtml(e.name);
+      return `-rw-r--r--  1 mbuelow mbuelow ${String(e.size).padStart(5)} ${formatLsDate(e.mtime)} <a href="${href}" class="home-terminal-file-link">${name}</a>`;
+    }),
+  ];
+  const projectsTerminalBody = `<div class="home-terminal">
+<pre class="home-terminal-session"><span class="home-terminal-prompt">mbuelow@dev:~/projects$ </span>pwd
+/home/mbuelow/projects
+<span class="home-terminal-prompt">mbuelow@dev:~/projects$ </span>ls -al
+total ${projectLsEntries.length}
+${projectLsLines.join("\n")}
+<span class="home-terminal-prompt">mbuelow@dev:~/projects$ </span><span class="home-terminal-cursor"></span></pre>
+</div>`;
+  writePage("projects/index.html", "Projects", projectsTerminalBody, {
+    activeProjects: true,
+  }, "main--home-terminal");
+
+  // Cheat sheets index + pages (output under cheat-sheets/)
   const csPath = OUTPUT_PATH.cheatsheets;
   ensureDir(path.join(DIST, csPath));
-  const csIndexBody = `
-    <ul>
-      <li><a href="x86.html">x86 Instruction Set Lookup</a></li>
-      <li><a href="binary-ninja.html">Binary Ninja Disassembly Symbols</a></li>
-    </ul>`;
-  writePage(`${csPath}/index.html`, "Cheat Sheets", csIndexBody, {
-    activeCheatsheets: true,
-  });
+  const csDir = path.join(CONTENT, "cheatsheets");
+  const csFiles = fs.existsSync(csDir)
+    ? fs.readdirSync(csDir).filter((f) => f.endsWith(".md"))
+    : [];
+  const csLsEntries = [];
+  for (const file of csFiles) {
+    const fullPath = path.join(csDir, file);
+    const stat = fs.statSync(fullPath);
+    csLsEntries.push({
+      name: file,
+      slug: path.basename(file, ".md"),
+      size: stat.size,
+      mtime: stat.mtime,
+    });
+  }
+  csLsEntries.sort((a, b) => a.name.localeCompare(b.name));
 
-  const x86Path = path.join(CONTENT, "cheatsheets", "x86.md");
-  if (fs.existsSync(x86Path)) {
-    const { body } = parseFrontMatter(fs.readFileSync(x86Path, "utf8"));
-    writePage(`${csPath}/x86.html`, "x86 Instruction Set", marked.parse(body), {
+  const csLsLines = [
+    "drwxr-xr-x  2 mbuelow mbuelow  4096 Mar 12 14:23 .",
+    "drwxr-xr-x  3 mbuelow mbuelow  4096 Jan  8 09:41 ..",
+    ...csLsEntries.map((e) => {
+      const href = escapeHtml(e.slug + ".html");
+      const name = escapeHtml(e.name);
+      return `-rw-r--r--  1 mbuelow mbuelow ${String(e.size).padStart(5)} ${formatLsDate(e.mtime)} <a href="${href}" class="home-terminal-file-link">${name}</a>`;
+    }),
+  ];
+  const csTerminalBody = `<div class="home-terminal">
+<pre class="home-terminal-session"><span class="home-terminal-prompt">mbuelow@dev:~/cheat-sheets$ </span>pwd
+/home/mbuelow/cheat-sheets
+<span class="home-terminal-prompt">mbuelow@dev:~/cheat-sheets$ </span>ls -al
+total ${csLsEntries.length}
+${csLsLines.join("\n")}
+<span class="home-terminal-prompt">mbuelow@dev:~/cheat-sheets$ </span><span class="home-terminal-cursor"></span></pre>
+</div>`;
+  writePage(`${csPath}/index.html`, "Cheat Sheets", csTerminalBody, {
+    activeCheatsheets: true,
+  }, "main--home-terminal");
+
+  for (const e of csLsEntries) {
+    const raw = fs.readFileSync(path.join(csDir, e.name), "utf8");
+    const { meta, body } = parseFrontMatter(raw);
+    const title = meta.title || e.slug;
+    writePage(`${csPath}/${e.slug}.html`, title, marked.parse(body), {
       activeCheatsheets: true,
     });
   }
 
-  const bnPath = path.join(CONTENT, "cheatsheets", "binary-ninja.md");
-  if (fs.existsSync(bnPath)) {
-    const { body } = parseFrontMatter(fs.readFileSync(bnPath, "utf8"));
-    writePage(
-      `${csPath}/binary-ninja.html`,
-      "Binary Ninja Symbols",
-      marked.parse(body),
-      { activeCheatsheets: true }
-    );
-  }
-
-  // CTF index + writeups (output under ctf-challenges/)
+  // CTF index + writeups (output under ctf-challenges/) — CLI style
   const ctfPath = OUTPUT_PATH.ctf;
   const ctfDir = path.join(CONTENT, "ctf");
   const ctfFiles = fs.existsSync(ctfDir)
     ? fs.readdirSync(ctfDir).filter((f) => f.endsWith(".md"))
     : [];
-  let ctfIndexBody = "<ul>";
+  const ctfLsEntries = [];
   for (const file of ctfFiles) {
-    const raw = fs.readFileSync(path.join(ctfDir, file), "utf8");
-    const { meta } = parseFrontMatter(raw);
-    const slug = path.basename(file, ".md");
-    ctfIndexBody += `<li><a href="${slug}.html">${escapeHtml(meta.title || slug)}</a></li>`;
+    const fullPath = path.join(ctfDir, file);
+    const stat = fs.statSync(fullPath);
+    ctfLsEntries.push({
+      name: file,
+      slug: path.basename(file, ".md"),
+      size: stat.size,
+      mtime: stat.mtime,
+    });
   }
-  ctfIndexBody += "</ul>";
-  writePage(`${ctfPath}/index.html`, "CTF Writeups", ctfIndexBody, { activeCtf: true });
+  ctfLsEntries.sort((a, b) => a.name.localeCompare(b.name));
+  const ctfLsLines = [
+    "drwxr-xr-x  2 mbuelow mbuelow  4096 Mar 12 14:23 .",
+    "drwxr-xr-x  3 mbuelow mbuelow  4096 Jan  8 09:41 ..",
+    ...ctfLsEntries.map((e) => {
+      const href = escapeHtml(e.slug + ".html");
+      const name = escapeHtml(e.name);
+      return `-rw-r--r--  1 mbuelow mbuelow ${String(e.size).padStart(5)} ${formatLsDate(e.mtime)} <a href="${href}" class="home-terminal-file-link">${name}</a>`;
+    }),
+  ];
+  const ctfTerminalBody = `<div class="home-terminal">
+<pre class="home-terminal-session"><span class="home-terminal-prompt">mbuelow@dev:~/ctf-challenges$ </span>pwd
+/home/mbuelow/ctf-challenges
+<span class="home-terminal-prompt">mbuelow@dev:~/ctf-challenges$ </span>ls -al
+total ${ctfLsEntries.length}
+${ctfLsLines.join("\n")}
+<span class="home-terminal-prompt">mbuelow@dev:~/ctf-challenges$ </span><span class="home-terminal-cursor"></span></pre>
+</div>`;
+  ensureDir(path.join(DIST, ctfPath));
+  writePage(`${ctfPath}/index.html`, "CTF Writeups", ctfTerminalBody, { activeCtf: true }, "main--home-terminal");
 
-  for (const file of ctfFiles) {
-    const raw = fs.readFileSync(path.join(ctfDir, file), "utf8");
+  for (const e of ctfLsEntries) {
+    const raw = fs.readFileSync(path.join(ctfDir, e.name), "utf8");
     const { meta, body } = parseFrontMatter(raw);
-    const slug = path.basename(file, ".md");
-    writePage(`${ctfPath}/${slug}.html`, meta.title || slug, marked.parse(body), {
+    writePage(`${ctfPath}/${e.slug}.html`, meta.title || e.slug, marked.parse(body), {
       activeCtf: true,
     });
   }
 
-  // RE Tips (output under reversing/)
+  // Reversing: CLI style (ls -al reversing.md, then cat reversing.md with raw markdown)
   const rePath = OUTPUT_PATH["re-tips"];
   const reTipsPath = path.join(CONTENT, "reversing.md");
-  const reTipsBody = fs.existsSync(reTipsPath)
-    ? marked.parse(
-        parseFrontMatter(fs.readFileSync(reTipsPath, "utf8")).body
-      )
-    : "<p>Tips coming soon.</p>";
-  writePage(`${rePath}/index.html`, "Reversing", reTipsBody, {
-    activeReTips: true,
-  });
-
-  // Downloads: from content/downloads.json
-  const downloadsPath = path.join(CONTENT, "downloads.json");
-  let downloadsBody = "<p>No downloads yet.</p>";
-  if (fs.existsSync(downloadsPath)) {
-    const list = JSON.parse(fs.readFileSync(downloadsPath, "utf8"));
-    const files = Array.isArray(list) ? list : list.files || [];
-    downloadsBody = `<table><thead><tr><th>Name</th><th>Description</th><th>Size</th><th></th></tr></thead><tbody>`;
-    for (const f of files) {
-      const size = f.size != null ? f.size : "—";
-      const url = (f.path || f.url || "#").startsWith("http") ? f.path || f.url : "files/" + (f.path || f.url || "");
-      downloadsBody += `<tr><td>${escapeHtml(f.name)}</td><td>${escapeHtml(f.description || "")}</td><td>${escapeHtml(size)}</td><td><a href="${escapeHtml(url)}" download>Download</a></td></tr>`;
-    }
-    downloadsBody += "</tbody></table>";
+  let reversingTerminalBody = "";
+  if (fs.existsSync(reTipsPath)) {
+    const rawContent = fs.readFileSync(reTipsPath, "utf8");
+    const stat = fs.statSync(reTipsPath);
+    const lsLine = `-rw-r--r--  1 mbuelow mbuelow ${String(stat.size).padStart(5)} ${formatLsDate(stat.mtime)} <a href="index.html" class="home-terminal-file-link">reversing.md</a>`;
+    const escapedContent = escapeHtml(rawContent);
+    reversingTerminalBody = `<div class="home-terminal">
+<pre class="home-terminal-session"><span class="home-terminal-prompt">mbuelow@dev:~$ </span>ls -al reversing.md
+${lsLine}
+<span class="home-terminal-prompt">mbuelow@dev:~$ </span>cat reversing.md
+${escapedContent}
+<span class="home-terminal-prompt">mbuelow@dev:~$ </span><span class="home-terminal-cursor"></span></pre>
+</div>`;
+  } else {
+    reversingTerminalBody = `<div class="home-terminal">
+<pre class="home-terminal-session"><span class="home-terminal-prompt">mbuelow@dev:~$ </span>ls -al reversing.md
+ls: cannot access 'reversing.md': No such file or directory
+<span class="home-terminal-prompt">mbuelow@dev:~$ </span><span class="home-terminal-cursor"></span></pre>
+</div>`;
   }
+  writePage(`${rePath}/index.html`, "Reversing", reversingTerminalBody, {
+    activeReTips: true,
+  }, "main--home-terminal");
+
+  // Downloads: CLI style (pwd -> /home/mbuelow/downloads, ls -al with real sizes)
   ensureDir(path.join(DIST, "downloads"));
-  writePage("downloads/index.html", "Downloads", downloadsBody, {
-    activeDownloads: true,
-  });
   const downloadsFilesSrc = path.join(CONTENT, "downloads");
   const downloadsFilesDest = path.join(DIST, "downloads", "files");
   ensureDir(downloadsFilesDest);
+  const downloadLsEntries = [];
   if (fs.existsSync(downloadsFilesSrc)) {
     for (const name of fs.readdirSync(downloadsFilesSrc)) {
       const src = path.join(downloadsFilesSrc, name);
-      if (fs.statSync(src).isFile())
+      if (fs.statSync(src).isFile()) {
+        const stat = fs.statSync(src);
+        downloadLsEntries.push({ name, size: stat.size, mtime: stat.mtime });
         fs.copyFileSync(src, path.join(downloadsFilesDest, name));
+      }
     }
   }
+  downloadLsEntries.sort((a, b) => a.name.localeCompare(b.name));
+  const downloadLsLines = [
+    "drwxr-xr-x  2 mbuelow mbuelow  4096 Mar 12 14:23 .",
+    "drwxr-xr-x  3 mbuelow mbuelow  4096 Jan  8 09:41 ..",
+    ...downloadLsEntries.map((e) => {
+      const href = escapeHtml("files/" + e.name);
+      const name = escapeHtml(e.name);
+      return `-rw-r--r--  1 mbuelow mbuelow ${String(e.size).padStart(5)} ${formatLsDate(e.mtime)} <a href="${href}" class="home-terminal-file-link">${name}</a>`;
+    }),
+  ];
+  const downloadsTerminalBody = `<div class="home-terminal">
+<pre class="home-terminal-session"><span class="home-terminal-prompt">mbuelow@dev:~/downloads$ </span>pwd
+/home/mbuelow/downloads
+<span class="home-terminal-prompt">mbuelow@dev:~/downloads$ </span>ls -al
+total ${downloadLsEntries.length}
+${downloadLsLines.join("\n")}
+<span class="home-terminal-prompt">mbuelow@dev:~/downloads$ </span><span class="home-terminal-cursor"></span></pre>
+</div>`;
+  writePage("downloads/index.html", "Downloads", downloadsTerminalBody, {
+    activeDownloads: true,
+  }, "main--home-terminal");
 
-  // Contact
-  const contactPath = path.join(CONTENT, "contact", "index.md");
-  const contactBody = fs.existsSync(contactPath)
-    ? marked.parse(
-        parseFrontMatter(fs.readFileSync(contactPath, "utf8")).body
-      )
-    : `<p>Reach out via <a href="https://github.com/mbuelowdev">GitHub</a>. LinkedIn coming soon.</p>`;
+  // Contact: CLI style (pwd, ls -al with symlinks to GitHub and LinkedIn)
   ensureDir(path.join(DIST, "contact"));
-  writePage("contact/index.html", "Contact", contactBody, {
+  const contactSymlinks = [
+    { name: "github", target: "https://github.com/mbuelowdev", size: 28 },
+    { name: "linkedin", target: "https://linkedin.com/in/mbuelowdev", size: 35 },
+  ];
+  const contactLsLines = [
+    "drwxr-xr-x  2 mbuelow mbuelow  4096 Mar 12 14:23 .",
+    "drwxr-xr-x  3 mbuelow mbuelow  4096 Jan  8 09:41 ..",
+    ...contactSymlinks.map(
+      (s) =>
+        `lrwxrwxrwx  1 mbuelow mbuelow  ${String(s.size).padStart(2)} Feb 28 12:00 ${escapeHtml(s.name)} -> <a href="${escapeHtml(s.target)}" class="home-terminal-file-link" rel="noopener noreferrer">${escapeHtml(s.target)}</a>`
+    ),
+  ];
+  const contactTerminalBody = `<div class="home-terminal">
+<pre class="home-terminal-session"><span class="home-terminal-prompt">mbuelow@dev:~/contact$ </span>pwd
+/home/mbuelow/contact
+<span class="home-terminal-prompt">mbuelow@dev:~/contact$ </span>ls -al
+total ${contactSymlinks.length}
+${contactLsLines.join("\n")}
+<span class="home-terminal-prompt">mbuelow@dev:~/contact$ </span><span class="home-terminal-cursor"></span></pre>
+</div>`;
+  writePage("contact/index.html", "Contact", contactTerminalBody, {
     activeContact: true,
-  });
+  }, "main--home-terminal");
 
   console.log("Build done. Output in dist/");
 }
