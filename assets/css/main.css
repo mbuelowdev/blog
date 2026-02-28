@@ -206,6 +206,15 @@ body {
   color: var(--accent-green);
 }
 
+.home-terminal-file-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.home-terminal-file-link:hover {
+  text-decoration: underline;
+}
+
 .main--home-terminal .home-terminal pre {
   flex: 0 0 auto;
   margin: 0;

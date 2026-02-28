@@ -18,6 +18,17 @@ function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
+function formatLsDate(date) {
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const d = new Date(date);
+  const m = months[d.getMonth()];
+  const day = d.getDate().toString().padStart(2, " ");
+  const h = d.getHours();
+  const min = d.getMinutes();
+  const time = `${h.toString().padStart(2, "0")}:${min.toString().padStart(2, "0")}`;
+  return `${m} ${day} ${time}`;
+}
+
 function parseFrontMatter(raw) {
   const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
   if (!match) return { meta: {}, body: raw };
@@ -183,6 +194,24 @@ function build() {
   }
 
   // Home (terminal-style: no title/links, Debian banner + fake ls)
+  const homeDirs = [
+    { name: ".", href: null },
+    { name: "..", href: null },
+    { name: "blog", href: "blog/index.html" },
+    { name: "contact", href: "contact/index.html" },
+    { name: "ctf-challenges", href: "ctf-challenges/index.html" },
+    { name: "cheat-sheets", href: "cheat-sheets/index.html" },
+    { name: "downloads", href: "downloads/index.html" },
+    { name: "projects", href: "projects/index.html" },
+    { name: "reversing", href: "reversing/index.html" },
+  ];
+  const homeLsLinesStr = homeDirs
+    .map((d) => {
+      const date = d.name === "." ? "Mar 12 14:23" : d.name === ".." ? "Jan  8 09:41" : d.name === "blog" ? "Nov  3 18:07" : d.name === "contact" ? "Sep 21 11:52" : d.name === "ctf-challenges" ? "Jul 15 16:30" : d.name === "cheat-sheets" ? "Feb 28 08:14" : d.name === "downloads" ? "Oct  5 22:19" : d.name === "projects" ? "May 17 13:00" : "Apr  2 10:33";
+      const namePart = d.href ? `<a href="${escapeHtml(d.href)}" class="home-terminal-file-link">${escapeHtml(d.name)}</a>` : d.name;
+      return `drwxr-xr-x  2 mbuelow mbuelow  4096 ${date} ${namePart}`;
+    })
+    .join("\n");
   const homeTerminalBody = `<div class="home-terminal">
 <pre class="home-terminal-banner">Linux mbuelow-dev 6.1.0-1-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.1.0-1 (2023-01-07) x86_64
 
@@ -193,15 +222,7 @@ Last login: Fri Jul  7 07:00:07 2023 from 192.168.6.66</pre>
 /home/mbuelow
 <span class="home-terminal-prompt">mbuelow@dev:~$ </span>ls -al
 total 8
-drwxr-xr-x  2 mbuelow mbuelow  4096 Mar 12 14:23 .
-drwxr-xr-x  3 mbuelow mbuelow  4096 Jan  8 09:41 ..
-drwxr-xr-x  2 mbuelow mbuelow  4096 Nov  3 18:07 blog
-drwxr-xr-x  2 mbuelow mbuelow  4096 Sep 21 11:52 contact
-drwxr-xr-x  2 mbuelow mbuelow  4096 Jul 15 16:30 ctf-challenges
-drwxr-xr-x  2 mbuelow mbuelow  4096 Feb 28 08:14 cheat-sheets
-drwxr-xr-x  2 mbuelow mbuelow  4096 Oct  5 22:19 downloads
-drwxr-xr-x  2 mbuelow mbuelow  4096 May 17 13:00 projects
-drwxr-xr-x  2 mbuelow mbuelow  4096 Apr  2 10:33 reversing
+${homeLsLinesStr}
 <span class="home-terminal-prompt">mbuelow@dev:~$ </span><span class="home-terminal-cursor"></span></pre>
 </div>`;
   writePage(
@@ -218,8 +239,11 @@ drwxr-xr-x  2 mbuelow mbuelow  4096 Apr  2 10:33 reversing
     ? fs.readdirSync(blogDir).filter((f) => f.endsWith(".md"))
     : [];
   const posts = [];
+  const blogLsEntries = [];
   for (const file of blogPosts) {
-    const raw = fs.readFileSync(path.join(blogDir, file), "utf8");
+    const fullPath = path.join(blogDir, file);
+    const stat = fs.statSync(fullPath);
+    const raw = fs.readFileSync(fullPath, "utf8");
     const { meta, body } = parseFrontMatter(raw);
     const slug = path.basename(file, ".md");
     posts.push({
@@ -228,20 +252,45 @@ drwxr-xr-x  2 mbuelow mbuelow  4096 Apr  2 10:33 reversing
       date: meta.date || "",
       excerpt: meta.excerpt || body.slice(0, 160).replace(/\n/g, " ") + "...",
     });
+    blogLsEntries.push({
+      name: file,
+      size: stat.size,
+      mtime: stat.mtime,
+    });
+  }
+  blogLsEntries.sort((a, b) => a.name.localeCompare(b.name));
+  for (const p of posts) {
+    const raw = fs.readFileSync(path.join(blogDir, `${p.slug}.md`), "utf8");
+    const { meta, body } = parseFrontMatter(raw);
     writePage(
-      `blog/${slug}.html`,
-      meta.title || slug,
+      `blog/${p.slug}.html`,
+      meta.title || p.slug,
       marked.parse(body),
       { activeBlog: true }
     );
   }
   posts.sort((a, b) => (b.date > a.date ? 1 : -1));
-  let blogIndexBody = "<ul class=\"post-list\">";
-  for (const p of posts) {
-    blogIndexBody += `<li><a href="${getBase("blog/index.html")}blog/${p.slug}.html">${escapeHtml(p.title)}</a>${p.date ? ` <span class=\"date\">${escapeHtml(p.date)}</span>` : ""}</li>`;
-  }
-  blogIndexBody += "</ul>";
-  writePage("blog/index.html", "Blog", blogIndexBody, { activeBlog: true });
+
+  // Blog index: CLI style (pwd -> /home/mbuelow/blog, ls -al with real sizes)
+  const blogLsLines = [
+    "drwxr-xr-x  2 mbuelow mbuelow  4096 Mar 12 14:23 .",
+    "drwxr-xr-x  3 mbuelow mbuelow  4096 Jan  8 09:41 ..",
+    ...blogLsEntries.map((e) => {
+      const slug = path.basename(e.name, ".md");
+      const href = escapeHtml(slug + ".html");
+      const name = escapeHtml(e.name);
+      return `-rw-r--r--  1 mbuelow mbuelow ${String(e.size).padStart(5)} ${formatLsDate(e.mtime)} <a href="${href}" class="home-terminal-file-link">${name}</a>`;
+    }),
+  ];
+  const blogTerminalBody = `<div class="home-terminal">
+<pre class="home-terminal-session"><span class="home-terminal-prompt">mbuelow@dev:~/blog$ </span>pwd
+/home/mbuelow/blog
+<span class="home-terminal-prompt">mbuelow@dev:~/blog$ </span>ls -al
+total ${Math.max(8, Math.ceil(blogLsEntries.reduce((s, e) => s + e.size, 0) / 1024))}
+${blogLsLines.join("\n")}
+<span class="home-terminal-prompt">mbuelow@dev:~/blog$ </span><span class="home-terminal-cursor"></span></pre>
+</div>`;
+  writePage("blog/index.html", "Blog", blogTerminalBody, { activeBlog: true }, "main--home-terminal");
 
   // Projects index + individual project pages
   const projectsDir = path.join(CONTENT, "projects");
