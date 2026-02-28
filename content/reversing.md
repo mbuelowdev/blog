@@ -2,7 +2,7 @@
 title: Reversing
 ---
 
-# Reverse engineering tips & tricks
+# Reversing
 
 Short tips grouped by tool and theme.
 

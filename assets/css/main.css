@@ -49,7 +49,7 @@ html {
 body {
   margin: 0;
   font-family: var(--font-sans);
-  background: var(--bg-main);
+  background: var(--bg-dark);
   color: var(--text);
   line-height: 1.6;
   min-height: 100vh;
@@ -147,6 +147,82 @@ body {
   min-width: 0;
   padding: 1.5rem 2rem 3rem;
   max-width: 52rem;
+  background: var(--bg-dark);
+}
+
+/* Home page: terminal view (no header, full-height single unit) */
+.main--home-terminal .page-header,
+.main--home-terminal .breadcrumb {
+  display: none;
+}
+
+.main--home-terminal {
+  max-width: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  flex: 1;
+}
+
+.main--home-terminal .content {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  max-width: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.main--home-terminal .content .home-terminal {
+  flex: 1;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.home-terminal {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--text);
+  user-select: text;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 1rem 1.25rem;
+  margin: 0;
+  background: var(--bg-dark);
+}
+
+.home-terminal-prompt {
+  color: var(--accent-green);
+}
+
+.main--home-terminal .home-terminal pre {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+}
+
+.home-terminal-cursor {
+  display: inline-block;
+  width: 0.6em;
+  height: 1em;
+  background: var(--accent-green);
+  animation: home-terminal-blink 1s step-end infinite;
+  vertical-align: -0.1em;
+}
+
+@keyframes home-terminal-blink {
+  50% { opacity: 0; }
 }
 
 /* Breadcrumb - IDE-style hierarchy */

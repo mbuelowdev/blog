@@ -44,6 +44,7 @@ function renderLayout(opts) {
   html = html.replace(/\{\{\{body\}\}\}/g, body);
   html = html.replace(/\{\{\{breadcrumb\}\}\}/g, opts.breadcrumb ?? "");
   html = html.replace(/\{\{version\}\}/g, opts.version ?? "");
+  html = html.replace(/\{\{mainClass\}\}/g, opts.mainClass ?? "");
   const active = opts.active ?? {};
   for (const key of [
     "activeHome",
@@ -138,7 +139,7 @@ function renderBreadcrumbHtml(outputPath, title) {
   return `<nav class="breadcrumb breadcrumb-cli" aria-label="Breadcrumb"><span class="breadcrumb-prompt">${prompt}</span><span class="breadcrumb-sep">/</span>${pathStr}<span class="breadcrumb-prompt">$</span></nav>`;
 }
 
-function writePage(outputPath, title, bodyHtml, active = {}) {
+function writePage(outputPath, title, bodyHtml, active = {}, mainClass = "") {
   const outFile = path.join(DIST, outputPath);
   ensureDir(path.dirname(outFile));
   const base = getBase(outputPath);
@@ -151,6 +152,7 @@ function writePage(outputPath, title, bodyHtml, active = {}) {
     active,
     breadcrumb: breadcrumbHtml,
     version: globalVersion,
+    mainClass,
   });
   fs.writeFileSync(outFile, html, "utf8");
 }
@@ -180,16 +182,34 @@ function build() {
     }
   }
 
-  // Home
-  const homePath = path.join(CONTENT, "home.md");
-  const homeRaw = fs.existsSync(homePath) ? fs.readFileSync(homePath, "utf8") : "# Home\n\nWelcome.";
-  const homeParsed = parseFrontMatter(homeRaw);
-  const homeTitle = homeParsed.meta.title || "Home";
+  // Home (terminal-style: no title/links, Debian banner + fake ls)
+  const homeTerminalBody = `<div class="home-terminal">
+<pre class="home-terminal-banner">Linux mbuelow-dev 6.1.0-1-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.1.0-1 (2023-01-07) x86_64
+
+Last login: Fri Jul  7 07:00:07 2023 from 192.168.6.66</pre>
+<pre class="home-terminal-session"><span class="home-terminal-prompt">mbuelow@dev:~$ </span>
+<span class="home-terminal-prompt">mbuelow@dev:~$ </span>
+<span class="home-terminal-prompt">mbuelow@dev:~$ </span>pwd
+/home/mbuelow
+<span class="home-terminal-prompt">mbuelow@dev:~$ </span>ls -al
+total 8
+drwxr-xr-x  2 mbuelow mbuelow  4096 Mar 12 14:23 .
+drwxr-xr-x  3 mbuelow mbuelow  4096 Jan  8 09:41 ..
+drwxr-xr-x  2 mbuelow mbuelow  4096 Nov  3 18:07 blog
+drwxr-xr-x  2 mbuelow mbuelow  4096 Sep 21 11:52 contact
+drwxr-xr-x  2 mbuelow mbuelow  4096 Jul 15 16:30 ctf-challenges
+drwxr-xr-x  2 mbuelow mbuelow  4096 Feb 28 08:14 cheat-sheets
+drwxr-xr-x  2 mbuelow mbuelow  4096 Oct  5 22:19 downloads
+drwxr-xr-x  2 mbuelow mbuelow  4096 May 17 13:00 projects
+drwxr-xr-x  2 mbuelow mbuelow  4096 Apr  2 10:33 reversing
+<span class="home-terminal-prompt">mbuelow@dev:~$ </span><span class="home-terminal-cursor"></span></pre>
+</div>`;
   writePage(
     "index.html",
-    homeTitle,
-    marked.parse(homeParsed.body),
-    { activeHome: true }
+    "Home",
+    homeTerminalBody,
+    { activeHome: true },
+    "main--home-terminal"
   );
 
   // Blog index + posts
@@ -319,13 +339,13 @@ function build() {
 
   // RE Tips (output under reversing/)
   const rePath = OUTPUT_PATH["re-tips"];
-  const reTipsPath = path.join(CONTENT, "re-tips.md");
+  const reTipsPath = path.join(CONTENT, "reversing.md");
   const reTipsBody = fs.existsSync(reTipsPath)
     ? marked.parse(
         parseFrontMatter(fs.readFileSync(reTipsPath, "utf8")).body
       )
     : "<p>Tips coming soon.</p>";
-  writePage(`${rePath}/index.html`, "RE Tips & Tricks", reTipsBody, {
+  writePage(`${rePath}/index.html`, "Reversing", reTipsBody, {
     activeReTips: true,
   });
 
