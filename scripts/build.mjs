@@ -13,6 +13,15 @@ let globalVersion = "";
 
 const LAST_REFRESHED = new Date().toISOString().replace("T", " ").slice(0, 19);
 
+function escapeHtml(s) {
+  if (!s) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
@@ -28,23 +37,46 @@ function formatLsDate(date) {
   return `${m} ${day} ${time}`;
 }
 
-function makeSingleFileCliBody(fullPath, filename, linkHref, prompt, escapeHtml) {
-  if (!fs.existsSync(fullPath)) {
-    return `<div class="home-terminal">
+/** Entries: { name, size?, mtime?, href?, dir? } — include . and .. for dirs. */
+function renderDirectoryListing(prompt, pwd, entries) {
+  const lsLines = entries.map((e) => {
+    const perm = e.dir ? "drwxr-xr-x" : "-rw-r--r--";
+    const size = e.dir ? "4096" : String(e.size ?? 0).padStart(5);
+    const date = e.mtime ? formatLsDate(e.mtime) : (e.dateStr ?? "Mar 12 14:23");
+    const namePart = e.href != null
+      ? `<a href="${escapeHtml(e.href)}" class="home-terminal-file-link">${escapeHtml(e.name)}</a>`
+      : escapeHtml(e.name);
+    return `${perm}  2 mbuelow mbuelow ${size} ${date} ${namePart}`;
+  });
+  const total = entries.length;
+  return `<div class="home-terminal">
+<pre class="home-terminal-session"><span class="home-terminal-prompt">${prompt}</span>pwd
+${pwd}
+<span class="home-terminal-prompt">${prompt}</span>ls -al
+total ${total}
+${lsLines.join("\n")}
+<span class="home-terminal-prompt">${prompt}</span><span class="home-terminal-cursor"></span></pre>
+</div>`;
+}
+
+/** Content must be already escaped. size/mtime optional for client-side. */
+function renderSingleFileCli(prompt, filename, content, size, mtime) {
+  const errHtml = `<div class="home-terminal">
 <pre class="home-terminal-session"><span class="home-terminal-prompt">${prompt}</span>ls -al ${escapeHtml(filename)}
 ls: cannot access '${escapeHtml(filename)}': No such file or directory
 <span class="home-terminal-prompt">${prompt}</span><span class="home-terminal-cursor"></span></pre>
 </div>`;
-  }
-  const rawContent = fs.readFileSync(fullPath, "utf8");
-  const stat = fs.statSync(fullPath);
-  const lsLine = `-rw-r--r--  1 mbuelow mbuelow ${String(stat.size).padStart(5)} ${formatLsDate(stat.mtime)} <a href="${escapeHtml(linkHref)}" class="home-terminal-file-link">${escapeHtml(filename)}</a>`;
-  const escapedContent = escapeHtml(rawContent);
+  if (content == null && (size == null || mtime == null)) return errHtml;
+  const lsLine = size != null && mtime != null
+    ? `-rw-r--r--  1 mbuelow mbuelow ${String(size).padStart(5)} ${formatLsDate(mtime)} <a href="${escapeHtml("?cat=" + filename)}" class="home-terminal-file-link">${escapeHtml(filename)}</a>`
+    : null;
+  const body = content != null ? content : "";
+  const middle = lsLine != null
+    ? `${lsLine}\n<span class="home-terminal-prompt">${prompt}</span>cat ${escapeHtml(filename)}\n${body}`
+    : `<span class="home-terminal-prompt">${prompt}</span>cat ${escapeHtml(filename)}\n${body}`;
   return `<div class="home-terminal">
 <pre class="home-terminal-session"><span class="home-terminal-prompt">${prompt}</span>ls -al ${escapeHtml(filename)}
-${lsLine}
-<span class="home-terminal-prompt">${prompt}</span>cat ${escapeHtml(filename)}
-${escapedContent}
+${middle}
 <span class="home-terminal-prompt">${prompt}</span><span class="home-terminal-cursor"></span></pre>
 </div>`;
 }
@@ -76,23 +108,7 @@ function renderLayout(opts) {
   html = html.replace(/\{\{\{breadcrumb\}\}\}/g, opts.breadcrumb ?? "");
   html = html.replace(/\{\{version\}\}/g, opts.version ?? "");
   html = html.replace(/\{\{mainClass\}\}/g, opts.mainClass ?? "");
-  const active = opts.active ?? {};
-  for (const key of [
-    "activeHome",
-    "activeBlog",
-    "activeProjects",
-    "activeCheatsheets",
-    "activeCtf",
-    "activeReTips",
-    "activeDownloads",
-    "activeContact",
-  ]) {
-    const regex = new RegExp(
-      `\\{\\{#${key}\\}\\} active\\{\\{/${key}\\}\\}`,
-      "g"
-    );
-    html = html.replace(regex, active[key] ? " active" : "");
-  }
+  html = html.replace(/\{\{\{nav\}\}\}/g, opts.nav ?? "");
   return html;
 }
 
@@ -102,26 +118,30 @@ function getBase(outputPath) {
   return "../".repeat(segments.length - 1);
 }
 
-const SECTION_LABELS = {
-  blog: "Blog",
-  projects: "Projects",
-  cheatsheets: "Cheat Sheets",
-  ctf: "CTF-Challenges",
-  "re-tips": "Reversing",
-  downloads: "Downloads",
-  contact: "Contact",
-};
+function loadSections() {
+  const p = path.join(CONTENT, "sections.json");
+  if (!fs.existsSync(p)) throw new Error("content/sections.json not found");
+  const data = JSON.parse(fs.readFileSync(p, "utf8"));
+  const sections = (data.sections || []).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  return sections;
+}
 
-/* URL path segment (lowercase, dashed) for each section. Output dirs and links use these. */
-const OUTPUT_PATH = {
-  blog: "blog",
-  projects: "projects",
-  cheatsheets: "cheat-sheets",
-  ctf: "ctf-challenges",
-  "re-tips": "reversing",
-  downloads: "downloads",
-  contact: "contact",
-};
+function renderNavHtml(sections, activeSectionId, base) {
+  const parts = [];
+  let lastGroup = null;
+  for (const s of sections) {
+    if (s.navGroup !== lastGroup) {
+      lastGroup = s.navGroup;
+      if (lastGroup !== "Main") {
+        parts.push(`<div class="nav-section">${escapeHtml(lastGroup)}</div>`);
+      }
+    }
+    const href = s.outputPath === "" ? `${base}index.html` : `${base}${s.outputPath}/index.html`;
+    const active = s.id === activeSectionId ? " active" : "";
+    parts.push(`<a href="${escapeHtml(href)}" class="nav-link${active}">${escapeHtml(s.label)}</a>`);
+  }
+  return parts.join("\n      ");
+}
 
 function slugify(text) {
   return String(text)
@@ -174,17 +194,18 @@ function renderBreadcrumbHtml(outputPath, title) {
   return `<nav class="breadcrumb breadcrumb-cli" aria-label="Breadcrumb"><span class="breadcrumb-prompt">${prompt}</span><span class="breadcrumb-sep">/</span>${pathStr}<span class="breadcrumb-prompt">$</span></nav>`;
 }
 
-function writePage(outputPath, title, bodyHtml, active = {}, mainClass = "") {
+function writePage(sections, outputPath, title, bodyHtml, activeSectionId, mainClass = "") {
   const outFile = path.join(DIST, outputPath);
   ensureDir(path.dirname(outFile));
   const base = getBase(outputPath);
   const breadcrumbHtml = renderBreadcrumbHtml(outputPath, title);
+  const nav = renderNavHtml(sections, activeSectionId, base);
   const html = renderLayout({
     title,
     base,
     lastRefreshed: LAST_REFRESHED,
     body: bodyHtml,
-    active,
+    nav,
     breadcrumb: breadcrumbHtml,
     version: globalVersion,
     mainClass,
@@ -205,6 +226,9 @@ function build() {
     } catch (_) {}
   }
 
+  // Load config
+  const sections = loadSections();
+
   // Copy assets
   for (const sub of ["css", "js", "fonts", "images"]) {
     const src = path.join(ASSETS, sub);
@@ -217,25 +241,21 @@ function build() {
     }
   }
 
-  // Home (terminal-style: no title/links, Debian banner + fake ls)
-  const homeDirs = [
-    { name: ".", href: null },
-    { name: "..", href: null },
-    { name: "blog", href: "blog/index.html" },
-    { name: "contact", href: "contact/index.html" },
-    { name: "ctf-challenges", href: "ctf-challenges/index.html" },
-    { name: "cheat-sheets", href: "cheat-sheets/index.html" },
-    { name: "downloads", href: "downloads/index.html" },
-    { name: "projects", href: "projects/index.html" },
-    { name: "reversing", href: "reversing/index.html" },
+  // Home: Debian banner + ls of section dirs (from config, exclude home)
+  const homeSectionDirs = sections.filter((s) => s.id !== "home").map((s) => ({
+    name: s.outputPath || s.id,
+    href: s.outputPath === "" ? "index.html" : `${s.outputPath}/index.html`,
+  }));
+  const homeEntries = [
+    { name: ".", dir: true, dateStr: "Mar 12 14:23" },
+    { name: "..", dir: true, dateStr: "Jan  8 09:41" },
+    ...homeSectionDirs.map((d) => ({ name: d.name, dir: true, size: 4096, dateStr: "Mar 12 14:23", href: d.href })),
   ];
-  const homeLsLinesStr = homeDirs
-    .map((d) => {
-      const date = d.name === "." ? "Mar 12 14:23" : d.name === ".." ? "Jan  8 09:41" : d.name === "blog" ? "Nov  3 18:07" : d.name === "contact" ? "Sep 21 11:52" : d.name === "ctf-challenges" ? "Jul 15 16:30" : d.name === "cheat-sheets" ? "Feb 28 08:14" : d.name === "downloads" ? "Oct  5 22:19" : d.name === "projects" ? "May 17 13:00" : "Apr  2 10:33";
-      const namePart = d.href ? `<a href="${escapeHtml(d.href)}" class="home-terminal-file-link">${escapeHtml(d.name)}</a>` : d.name;
-      return `drwxr-xr-x  2 mbuelow mbuelow  4096 ${date} ${namePart}`;
-    })
-    .join("\n");
+  const homeLsLinesStr = homeEntries.map((e) => {
+    const date = e.dateStr ?? "Mar 12 14:23";
+    const namePart = e.href != null ? `<a href="${escapeHtml(e.href)}" class="home-terminal-file-link">${escapeHtml(e.name)}</a>` : escapeHtml(e.name);
+    return `drwxr-xr-x  2 mbuelow mbuelow  4096 ${date} ${namePart}`;
+  }).join("\n");
   const homeTerminalBody = `<div class="home-terminal">
 <pre class="home-terminal-banner">Linux mbuelow-dev 6.1.0-1-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.1.0-1 (2023-01-07) x86_64
 
@@ -245,293 +265,38 @@ Last login: Fri Jul  7 07:00:07 2023 from 192.168.6.66</pre>
 <span class="home-terminal-prompt">mbuelow@dev:~$ </span>pwd
 /home/mbuelow
 <span class="home-terminal-prompt">mbuelow@dev:~$ </span>ls -al
-total ${Math.max(8, homeDirs.length)}
+total ${Math.max(8, homeEntries.length)}
 ${homeLsLinesStr}
 <span class="home-terminal-prompt">mbuelow@dev:~$ </span><span class="home-terminal-cursor"></span></pre>
 </div>`;
-  writePage(
-    "index.html",
-    "Home",
-    homeTerminalBody,
-    { activeHome: true },
-    "main--home-terminal"
-  );
+  writePage(sections, "index.html", "Home", homeTerminalBody, "home", "main--home-terminal");
 
-  // Blog index + posts
-  const blogDir = path.join(CONTENT, "blog");
-  const blogPosts = fs.existsSync(blogDir)
-    ? fs.readdirSync(blogDir).filter((f) => f.endsWith(".md"))
-    : [];
-  const posts = [];
-  const blogLsEntries = [];
-  for (const file of blogPosts) {
-    const fullPath = path.join(blogDir, file);
-    const stat = fs.statSync(fullPath);
-    const raw = fs.readFileSync(fullPath, "utf8");
-    const { meta, body } = parseFrontMatter(raw);
-    const slug = path.basename(file, ".md");
-    posts.push({
-      slug,
-      title: meta.title || slug,
-      date: meta.date || "",
-      excerpt: meta.excerpt || body.slice(0, 160).replace(/\n/g, " ") + "...",
-    });
-    blogLsEntries.push({
-      name: file,
-      size: stat.size,
-      mtime: stat.mtime,
-    });
-  }
-  blogLsEntries.sort((a, b) => a.name.localeCompare(b.name));
-  for (const p of posts) {
-    const fullPath = path.join(blogDir, `${p.slug}.md`);
-    const cliBody = makeSingleFileCliBody(
-      fullPath,
-      `${p.slug}.md`,
-      `${p.slug}.html`,
-      "mbuelow@dev:~/blog$ ",
-      escapeHtml
-    );
-    writePage(
-      `blog/${p.slug}.html`,
-      p.title,
-      cliBody,
-      { activeBlog: true },
-      "main--home-terminal"
-    );
-  }
-  posts.sort((a, b) => (b.date > a.date ? 1 : -1));
-
-  // Blog index: CLI style (pwd -> /home/mbuelow/blog, ls -al with real sizes)
-  const blogLsLines = [
-    "drwxr-xr-x  2 mbuelow mbuelow  4096 Mar 12 14:23 .",
-    "drwxr-xr-x  3 mbuelow mbuelow  4096 Jan  8 09:41 ..",
-    ...blogLsEntries.map((e) => {
-      const slug = path.basename(e.name, ".md");
-      const href = escapeHtml(slug + ".html");
-      const name = escapeHtml(e.name);
-      return `-rw-r--r--  1 mbuelow mbuelow ${String(e.size).padStart(5)} ${formatLsDate(e.mtime)} <a href="${href}" class="home-terminal-file-link">${name}</a>`;
-    }),
-  ];
-  const blogTerminalBody = `<div class="home-terminal">
-<pre class="home-terminal-session"><span class="home-terminal-prompt">mbuelow@dev:~/blog$ </span>pwd
-/home/mbuelow/blog
-<span class="home-terminal-prompt">mbuelow@dev:~/blog$ </span>ls -al
-total ${blogLsEntries.length}
-${blogLsLines.join("\n")}
-<span class="home-terminal-prompt">mbuelow@dev:~/blog$ </span><span class="home-terminal-cursor"></span></pre>
-</div>`;
-  writePage("blog/index.html", "Blog", blogTerminalBody, { activeBlog: true }, "main--home-terminal");
-
-  // Projects index + individual project pages
-  const projectsDir = path.join(CONTENT, "projects");
-  const projectFiles = fs.existsSync(projectsDir)
-    ? fs.readdirSync(projectsDir).filter((f) => f.endsWith(".md"))
-    : [];
-  const projectList = [];
-  const projectLsEntries = [];
-  for (const file of projectFiles) {
-    const fullPath = path.join(projectsDir, file);
-    const stat = fs.statSync(fullPath);
-    const raw = fs.readFileSync(fullPath, "utf8");
-    const { meta, body } = parseFrontMatter(raw);
-    const slug = path.basename(file, ".md");
-    projectList.push({
-      slug,
-      title: meta.title || slug,
-      description: meta.description || body.slice(0, 200).replace(/\n/g, " ").trim() + (body.length > 200 ? "…" : ""),
-    });
-    projectLsEntries.push({
-      name: file,
-      slug,
-      size: stat.size,
-      mtime: stat.mtime,
-    });
-  }
-  projectLsEntries.sort((a, b) => a.name.localeCompare(b.name));
-  for (const p of projectList) {
-    const fullPath = path.join(projectsDir, `${p.slug}.md`);
-    const cliBody = makeSingleFileCliBody(
-      fullPath,
-      `${p.slug}.md`,
-      `${p.slug}.html`,
-      "mbuelow@dev:~/projects$ ",
-      escapeHtml
-    );
-    writePage(
-      `projects/${p.slug}.html`,
-      p.title,
-      cliBody,
-      { activeProjects: true },
-      "main--home-terminal"
-    );
+  // Sections with contentDir and .md files: one index.html + copy .md to dist
+  for (const section of sections) {
+    if (section.id === "home" || section.id === "contact" || section.id === "downloads") continue;
+    const contentDir = section.contentDir ? path.join(CONTENT, section.contentDir) : null;
+    if (!contentDir || !fs.existsSync(contentDir)) continue;
+    const mdFiles = fs.readdirSync(contentDir).filter((f) => f.endsWith(".md"));
+    const prompt = section.outputPath ? `mbuelow@dev:~/${section.outputPath}$ ` : "mbuelow@dev:~$ ";
+    const pwd = section.outputPath ? `/home/mbuelow/${section.outputPath}` : "/home/mbuelow";
+    const entries = [
+      { name: ".", dir: true, dateStr: "Mar 12 14:23" },
+      { name: "..", dir: true, dateStr: "Jan  8 09:41" },
+      ...mdFiles.map((name) => {
+        const fullPath = path.join(contentDir, name);
+        const stat = fs.statSync(fullPath);
+        return { name, size: stat.size, mtime: stat.mtime, href: `?cat=${encodeURIComponent(name)}` };
+      }),
+    ];
+    const body = renderDirectoryListing(prompt, pwd, entries);
+    ensureDir(path.join(DIST, section.outputPath));
+    writePage(sections, `${section.outputPath}/index.html`, section.label, body, section.id, "main--home-terminal");
+    for (const name of mdFiles) {
+      fs.copyFileSync(path.join(contentDir, name), path.join(DIST, section.outputPath, name));
+    }
   }
 
-  // Projects index: CLI style (pwd -> /home/mbuelow/projects, ls -al with real sizes)
-  const projectLsLines = [
-    "drwxr-xr-x  2 mbuelow mbuelow  4096 Mar 12 14:23 .",
-    "drwxr-xr-x  3 mbuelow mbuelow  4096 Jan  8 09:41 ..",
-    ...projectLsEntries.map((e) => {
-      const href = escapeHtml(e.slug + ".html");
-      const name = escapeHtml(e.name);
-      return `-rw-r--r--  1 mbuelow mbuelow ${String(e.size).padStart(5)} ${formatLsDate(e.mtime)} <a href="${href}" class="home-terminal-file-link">${name}</a>`;
-    }),
-  ];
-  const projectsTerminalBody = `<div class="home-terminal">
-<pre class="home-terminal-session"><span class="home-terminal-prompt">mbuelow@dev:~/projects$ </span>pwd
-/home/mbuelow/projects
-<span class="home-terminal-prompt">mbuelow@dev:~/projects$ </span>ls -al
-total ${projectLsEntries.length}
-${projectLsLines.join("\n")}
-<span class="home-terminal-prompt">mbuelow@dev:~/projects$ </span><span class="home-terminal-cursor"></span></pre>
-</div>`;
-  writePage("projects/index.html", "Projects", projectsTerminalBody, {
-    activeProjects: true,
-  }, "main--home-terminal");
-
-  // Cheat sheets index + pages (output under cheat-sheets/)
-  const csPath = OUTPUT_PATH.cheatsheets;
-  ensureDir(path.join(DIST, csPath));
-  const csDir = path.join(CONTENT, "cheatsheets");
-  const csFiles = fs.existsSync(csDir)
-    ? fs.readdirSync(csDir).filter((f) => f.endsWith(".md"))
-    : [];
-  const csLsEntries = [];
-  for (const file of csFiles) {
-    const fullPath = path.join(csDir, file);
-    const stat = fs.statSync(fullPath);
-    csLsEntries.push({
-      name: file,
-      slug: path.basename(file, ".md"),
-      size: stat.size,
-      mtime: stat.mtime,
-    });
-  }
-  csLsEntries.sort((a, b) => a.name.localeCompare(b.name));
-
-  const csLsLines = [
-    "drwxr-xr-x  2 mbuelow mbuelow  4096 Mar 12 14:23 .",
-    "drwxr-xr-x  3 mbuelow mbuelow  4096 Jan  8 09:41 ..",
-    ...csLsEntries.map((e) => {
-      const href = escapeHtml(e.slug + ".html");
-      const name = escapeHtml(e.name);
-      return `-rw-r--r--  1 mbuelow mbuelow ${String(e.size).padStart(5)} ${formatLsDate(e.mtime)} <a href="${href}" class="home-terminal-file-link">${name}</a>`;
-    }),
-  ];
-  const csTerminalBody = `<div class="home-terminal">
-<pre class="home-terminal-session"><span class="home-terminal-prompt">mbuelow@dev:~/cheat-sheets$ </span>pwd
-/home/mbuelow/cheat-sheets
-<span class="home-terminal-prompt">mbuelow@dev:~/cheat-sheets$ </span>ls -al
-total ${csLsEntries.length}
-${csLsLines.join("\n")}
-<span class="home-terminal-prompt">mbuelow@dev:~/cheat-sheets$ </span><span class="home-terminal-cursor"></span></pre>
-</div>`;
-  writePage(`${csPath}/index.html`, "Cheat Sheets", csTerminalBody, {
-    activeCheatsheets: true,
-  }, "main--home-terminal");
-
-  for (const e of csLsEntries) {
-    const fullPath = path.join(csDir, e.name);
-    const title = (() => {
-      const { meta } = parseFrontMatter(fs.readFileSync(fullPath, "utf8"));
-      return meta.title || e.slug;
-    })();
-    const cliBody = makeSingleFileCliBody(
-      fullPath,
-      e.name,
-      `${e.slug}.html`,
-      "mbuelow@dev:~/cheat-sheets$ ",
-      escapeHtml
-    );
-    writePage(`${csPath}/${e.slug}.html`, title, cliBody, {
-      activeCheatsheets: true,
-    }, "main--home-terminal");
-  }
-
-  // CTF index + writeups (output under ctf-challenges/) — CLI style
-  const ctfPath = OUTPUT_PATH.ctf;
-  const ctfDir = path.join(CONTENT, "ctf");
-  const ctfFiles = fs.existsSync(ctfDir)
-    ? fs.readdirSync(ctfDir).filter((f) => f.endsWith(".md"))
-    : [];
-  const ctfLsEntries = [];
-  for (const file of ctfFiles) {
-    const fullPath = path.join(ctfDir, file);
-    const stat = fs.statSync(fullPath);
-    ctfLsEntries.push({
-      name: file,
-      slug: path.basename(file, ".md"),
-      size: stat.size,
-      mtime: stat.mtime,
-    });
-  }
-  ctfLsEntries.sort((a, b) => a.name.localeCompare(b.name));
-  const ctfLsLines = [
-    "drwxr-xr-x  2 mbuelow mbuelow  4096 Mar 12 14:23 .",
-    "drwxr-xr-x  3 mbuelow mbuelow  4096 Jan  8 09:41 ..",
-    ...ctfLsEntries.map((e) => {
-      const href = escapeHtml(e.slug + ".html");
-      const name = escapeHtml(e.name);
-      return `-rw-r--r--  1 mbuelow mbuelow ${String(e.size).padStart(5)} ${formatLsDate(e.mtime)} <a href="${href}" class="home-terminal-file-link">${name}</a>`;
-    }),
-  ];
-  const ctfTerminalBody = `<div class="home-terminal">
-<pre class="home-terminal-session"><span class="home-terminal-prompt">mbuelow@dev:~/ctf-challenges$ </span>pwd
-/home/mbuelow/ctf-challenges
-<span class="home-terminal-prompt">mbuelow@dev:~/ctf-challenges$ </span>ls -al
-total ${ctfLsEntries.length}
-${ctfLsLines.join("\n")}
-<span class="home-terminal-prompt">mbuelow@dev:~/ctf-challenges$ </span><span class="home-terminal-cursor"></span></pre>
-</div>`;
-  ensureDir(path.join(DIST, ctfPath));
-  writePage(`${ctfPath}/index.html`, "CTF Writeups", ctfTerminalBody, { activeCtf: true }, "main--home-terminal");
-
-  for (const e of ctfLsEntries) {
-    const fullPath = path.join(ctfDir, e.name);
-    const title = (() => {
-      const { meta } = parseFrontMatter(fs.readFileSync(fullPath, "utf8"));
-      return meta.title || e.slug;
-    })();
-    const cliBody = makeSingleFileCliBody(
-      fullPath,
-      e.name,
-      `${e.slug}.html`,
-      "mbuelow@dev:~/ctf-challenges$ ",
-      escapeHtml
-    );
-    writePage(`${ctfPath}/${e.slug}.html`, title, cliBody, {
-      activeCtf: true,
-    }, "main--home-terminal");
-  }
-
-  // Reversing: CLI style (ls -al reversing.md, then cat reversing.md with raw markdown)
-  const rePath = OUTPUT_PATH["re-tips"];
-  const reTipsPath = path.join(CONTENT, "reversing.md");
-  let reversingTerminalBody = "";
-  if (fs.existsSync(reTipsPath)) {
-    const rawContent = fs.readFileSync(reTipsPath, "utf8");
-    const stat = fs.statSync(reTipsPath);
-    const lsLine = `-rw-r--r--  1 mbuelow mbuelow ${String(stat.size).padStart(5)} ${formatLsDate(stat.mtime)} <a href="index.html" class="home-terminal-file-link">reversing.md</a>`;
-    const escapedContent = escapeHtml(rawContent);
-    reversingTerminalBody = `<div class="home-terminal">
-<pre class="home-terminal-session"><span class="home-terminal-prompt">mbuelow@dev:~$ </span>ls -al reversing.md
-${lsLine}
-<span class="home-terminal-prompt">mbuelow@dev:~$ </span>cat reversing.md
-${escapedContent}
-<span class="home-terminal-prompt">mbuelow@dev:~$ </span><span class="home-terminal-cursor"></span></pre>
-</div>`;
-  } else {
-    reversingTerminalBody = `<div class="home-terminal">
-<pre class="home-terminal-session"><span class="home-terminal-prompt">mbuelow@dev:~$ </span>ls -al reversing.md
-ls: cannot access 'reversing.md': No such file or directory
-<span class="home-terminal-prompt">mbuelow@dev:~$ </span><span class="home-terminal-cursor"></span></pre>
-</div>`;
-  }
-  writePage(`${rePath}/index.html`, "Reversing", reversingTerminalBody, {
-    activeReTips: true,
-  }, "main--home-terminal");
-
-  // Downloads: CLI style (pwd -> /home/mbuelow/downloads, ls -al with real sizes)
+  // Downloads: pwd + ls with direct links to files (no ?cat=)
   ensureDir(path.join(DIST, "downloads"));
   const downloadsFilesSrc = path.join(CONTENT, "downloads");
   const downloadsFilesDest = path.join(DIST, "downloads", "files");
@@ -548,28 +313,15 @@ ls: cannot access 'reversing.md': No such file or directory
     }
   }
   downloadLsEntries.sort((a, b) => a.name.localeCompare(b.name));
-  const downloadLsLines = [
-    "drwxr-xr-x  2 mbuelow mbuelow  4096 Mar 12 14:23 .",
-    "drwxr-xr-x  3 mbuelow mbuelow  4096 Jan  8 09:41 ..",
-    ...downloadLsEntries.map((e) => {
-      const href = escapeHtml("files/" + e.name);
-      const name = escapeHtml(e.name);
-      return `-rw-r--r--  1 mbuelow mbuelow ${String(e.size).padStart(5)} ${formatLsDate(e.mtime)} <a href="${href}" class="home-terminal-file-link">${name}</a>`;
-    }),
+  const downloadEntries = [
+    { name: ".", dir: true, dateStr: "Mar 12 14:23" },
+    { name: "..", dir: true, dateStr: "Jan  8 09:41" },
+    ...downloadLsEntries.map((e) => ({ name: e.name, size: e.size, mtime: e.mtime, href: `files/${e.name}` })),
   ];
-  const downloadsTerminalBody = `<div class="home-terminal">
-<pre class="home-terminal-session"><span class="home-terminal-prompt">mbuelow@dev:~/downloads$ </span>pwd
-/home/mbuelow/downloads
-<span class="home-terminal-prompt">mbuelow@dev:~/downloads$ </span>ls -al
-total ${downloadLsEntries.length}
-${downloadLsLines.join("\n")}
-<span class="home-terminal-prompt">mbuelow@dev:~/downloads$ </span><span class="home-terminal-cursor"></span></pre>
-</div>`;
-  writePage("downloads/index.html", "Downloads", downloadsTerminalBody, {
-    activeDownloads: true,
-  }, "main--home-terminal");
+  const downloadsTerminalBody = renderDirectoryListing("mbuelow@dev:~/downloads$ ", "/home/mbuelow/downloads", downloadEntries);
+  writePage(sections, "downloads/index.html", "Downloads", downloadsTerminalBody, "downloads", "main--home-terminal");
 
-  // Contact: CLI style (pwd, ls -al with symlinks to GitHub and LinkedIn)
+  // Contact: pwd + ls with symlinks
   ensureDir(path.join(DIST, "contact"));
   const contactSymlinks = [
     { name: "github", target: "https://github.com/mbuelowdev", size: 28 },
@@ -591,20 +343,9 @@ total ${contactSymlinks.length}
 ${contactLsLines.join("\n")}
 <span class="home-terminal-prompt">mbuelow@dev:~/contact$ </span><span class="home-terminal-cursor"></span></pre>
 </div>`;
-  writePage("contact/index.html", "Contact", contactTerminalBody, {
-    activeContact: true,
-  }, "main--home-terminal");
+  writePage(sections, "contact/index.html", "Contact", contactTerminalBody, "contact", "main--home-terminal");
 
   console.log("Build done. Output in dist/");
-}
-
-function escapeHtml(s) {
-  if (!s) return "";
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 build();

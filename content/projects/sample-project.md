@@ -1,7 +1,6 @@
 ---
 title: Sample project
 description: A placeholder project
-thumbnail: images/project-placeholder.png
 ---
 
 Placeholder. Add your projects here.

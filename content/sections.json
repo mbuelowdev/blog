@@ -1,11 +1,11 @@
 {
   "sections": [
-    { "id": "home", "label": "Home", "contentDir": null, "outputPath": "", "order": 0, "navGroup": "Main" },
-    { "id": "blog", "label": "Blog", "contentDir": "blog", "outputPath": "blog", "order": 1, "navGroup": "Main" },
-    { "id": "projects", "label": "Projects", "contentDir": "projects", "outputPath": "projects", "order": 2, "navGroup": "Main" },
-    { "id": "cheatsheets", "label": "Cheat Sheets", "contentDir": "cheatsheets", "outputPath": "cheat-sheets", "order": 3, "navGroup": "Reverse Engineering" },
-    { "id": "ctf", "label": "CTF-Challenges", "contentDir": "ctf", "outputPath": "ctf-challenges", "order": 4, "navGroup": "Reverse Engineering" },
-    { "id": "downloads", "label": "Downloads", "contentDir": "downloads", "outputPath": "downloads", "order": 5, "navGroup": "Other" },
-    { "id": "contact", "label": "Contact", "contentDir": null, "outputPath": "contact", "order": 6, "navGroup": "Other" }
+    { "order": 0, "id": "home", "label": "Home", "contentDir": null, "outputPath": "", "navGroup": "Main" },
+    { "order": 1, "id": "blog", "label": "Blog", "contentDir": "blog", "outputPath": "blog", "navGroup": "Main" },
+    { "order": 2, "id": "projects", "label": "Projects", "contentDir": "projects", "outputPath": "projects", "navGroup": "Main" },
+    { "order": 3, "id": "cheatsheets", "label": "Cheat Sheets", "contentDir": "cheatsheets", "outputPath": "cheat-sheets", "navGroup": "Reverse Engineering" },
+    { "order": 4, "id": "ctf", "label": "CTF-Challenges", "contentDir": "ctf", "outputPath": "ctf-challenges", "navGroup": "Reverse Engineering" },
+    { "order": 5, "id": "downloads", "label": "Downloads", "contentDir": "downloads", "outputPath": "downloads", "navGroup": "Other" },
+    { "order": 6, "id": "contact", "label": "Contact", "contentDir": null, "outputPath": "contact", "navGroup": "Other" }
   ]
 }
