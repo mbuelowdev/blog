@@ -237,6 +237,7 @@ function build() {
       slug,
       title: meta.title || slug,
       description: meta.description || body.slice(0, 200).replace(/\n/g, " ").trim() + (body.length > 200 ? "…" : ""),
+      thumbnail: meta.thumbnail || "images/project-placeholder.png",
     });
     writePage(
       `projects/${slug}.html`,
@@ -249,9 +250,10 @@ function build() {
   if (projectList.length === 0) {
     projectsIndexBody = "<p>No projects yet.</p>";
   } else {
-    projectsIndexBody = '<ul class="project-list">';
+    projectsIndexBody = '<p class="projects-intro">A list of projects I\'ve done in the past or still working on right now.</p><ul class="project-list">';
     for (const p of projectList) {
-      projectsIndexBody += `<li class="project-item"><a href="${p.slug}.html" class="project-item-link"><span class="project-item-title">${escapeHtml(p.title)}</span></a>${p.description ? `<p class="project-item-desc">${escapeHtml(p.description)}</p>` : ""}</li>`;
+      const thumbHtml = `<span class="project-item-thumb"><img src="${escapeHtml(p.thumbnail)}" alt="" loading="lazy"></span>`;
+      projectsIndexBody += `<li class="project-item"><a href="${p.slug}.html" class="project-item-link">${thumbHtml}<span class="project-item-content"><span class="project-item-title">${escapeHtml(p.title)}</span>${p.description ? `<p class="project-item-desc">${escapeHtml(p.description)}</p>` : ""}</span></a></li>`;
     }
     projectsIndexBody += "</ul>";
   }
