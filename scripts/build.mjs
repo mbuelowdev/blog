@@ -59,43 +59,6 @@ ${lsLines.join("\n")}
 </div>`;
 }
 
-/** Content must be already escaped. size/mtime optional for client-side. */
-function renderSingleFileCli(prompt, filename, content, size, mtime) {
-  const errHtml = `<div class="home-terminal">
-<pre class="home-terminal-session"><span class="home-terminal-prompt">${prompt}</span>ls -al ${escapeHtml(filename)}
-ls: cannot access '${escapeHtml(filename)}': No such file or directory
-<span class="home-terminal-prompt">${prompt}</span><span class="home-terminal-cursor"></span></pre>
-</div>`;
-  if (content == null && (size == null || mtime == null)) return errHtml;
-  const lsLine = size != null && mtime != null
-    ? `-rw-r--r--  1 mbuelow mbuelow ${String(size).padStart(5)} ${formatLsDate(mtime)} <a href="${escapeHtml("?cat=" + filename)}" class="home-terminal-file-link">${escapeHtml(filename)}</a>`
-    : null;
-  const body = content != null ? content : "";
-  const middle = lsLine != null
-    ? `${lsLine}\n<span class="home-terminal-prompt">${prompt}</span>cat ${escapeHtml(filename)}\n${body}`
-    : `<span class="home-terminal-prompt">${prompt}</span>cat ${escapeHtml(filename)}\n${body}`;
-  return `<div class="home-terminal">
-<pre class="home-terminal-session"><span class="home-terminal-prompt">${prompt}</span>ls -al ${escapeHtml(filename)}
-${middle}
-<span class="home-terminal-prompt">${prompt}</span><span class="home-terminal-cursor"></span></pre>
-</div>`;
-}
-
-function parseFrontMatter(raw) {
-  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
-  if (!match) return { meta: {}, body: raw };
-  const meta = {};
-  for (const line of match[1].split("\n")) {
-    const colon = line.indexOf(":");
-    if (colon > 0) {
-      const key = line.slice(0, colon).trim();
-      const value = line.slice(colon + 1).trim();
-      meta[key] = value;
-    }
-  }
-  return { meta, body: match[2] };
-}
-
 function renderLayout(opts) {
   let html = fs.readFileSync(path.join(TEMPLATES, "layout.html"), "utf8");
   html = html.replace(/\{\{title\}\}/g, opts.title || "mbuelow.dev");
@@ -143,32 +106,18 @@ function renderNavHtml(sections, activeSectionId, base) {
   return parts.join("\n      ");
 }
 
-function slugify(text) {
-  return String(text)
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9-]/g, "");
-}
-
 function getBreadcrumb(outputPath, title) {
   const segments = outputPath.split("/").filter(Boolean);
   if (segments.length === 0) return [];
   if (segments.length === 1 && segments[0] === "index.html")
     return [{ pathSlug: "~", href: "" }];
-
   const sectionSlug = segments[0];
   const isIndexPage = segments[1] === "index.html";
-
-  /* Section index: one path segment (e.g. /cheat-sheets), no link to home. */
   if (isIndexPage)
     return [{ pathSlug: sectionSlug, href: "" }];
-
-  /* Subpage: section (link to index) + current page slug. */
-  const titleSlug = slugify(title);
   return [
     { pathSlug: sectionSlug, href: "index.html" },
-    { pathSlug: titleSlug || "page", href: "" },
+    { pathSlug: "page", href: "" },
   ];
 }
 
