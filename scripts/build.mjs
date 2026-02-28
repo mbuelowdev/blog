@@ -10,6 +10,8 @@ const TEMPLATES = path.join(ROOT, "templates");
 const ASSETS = path.join(ROOT, "assets");
 const DIST = path.join(ROOT, "dist");
 
+let globalVersion = "";
+
 const LAST_REFRESHED = new Date().toISOString().replace("T", " ").slice(0, 19);
 
 function ensureDir(dir) {
@@ -36,8 +38,12 @@ function renderLayout(opts) {
   html = html.replace(/\{\{title\}\}/g, opts.title || "mbuelow.dev");
   html = html.replace(/\{\{base\}\}/g, opts.base ?? "");
   html = html.replace(/\{\{lastRefreshed\}\}/g, opts.lastRefreshed ?? LAST_REFRESHED);
-  html = html.replace(/\{\{\{body\}\}\}/g, opts.body ?? "");
+  /* Resolve images/ and links to images/ relative to current page (base). */
+  let body = opts.body ?? "";
+  body = body.replace(/\b(src|href)="images\//g, (_, attr) => `${attr}="${opts.base ?? ""}images/`);
+  html = html.replace(/\{\{\{body\}\}\}/g, body);
   html = html.replace(/\{\{\{breadcrumb\}\}\}/g, opts.breadcrumb ?? "");
+  html = html.replace(/\{\{version\}\}/g, opts.version ?? "");
   const active = opts.active ?? {};
   for (const key of [
     "activeHome",
@@ -74,51 +80,62 @@ const SECTION_LABELS = {
   contact: "Contact",
 };
 
+/* URL path segment (lowercase, dashed) for each section. Output dirs and links use these. */
+const OUTPUT_PATH = {
+  blog: "blog",
+  projects: "projects",
+  cheatsheets: "cheat-sheets",
+  ctf: "ctf-challenges",
+  "re-tips": "reversing",
+  downloads: "downloads",
+  contact: "contact",
+};
+
+function slugify(text) {
+  return String(text)
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "");
+}
+
 function getBreadcrumb(outputPath, title) {
   const segments = outputPath.split("/").filter(Boolean);
   if (segments.length === 0) return [];
-
-  const dirDepth = segments.length - 1;
-  const homeHref =
-    dirDepth === 0 ? "index.html" : "../".repeat(dirDepth) + "index.html";
-  const section = segments[0];
-  const sectionLabel = SECTION_LABELS[section] || section;
-  const isIndexPage = segments[1] === "index.html";
-
-  /* Home page: no breadcrumb. */
   if (segments.length === 1 && segments[0] === "index.html") return [];
 
-  /* Section index: "/" (link to home) > section name. */
-  if (isIndexPage)
-    return [
-      { label: "/", href: homeHref },
-      { label: sectionLabel, href: "" },
-    ];
+  const sectionSlug = segments[0];
+  const isIndexPage = segments[1] === "index.html";
 
-  /* Subpage: "/" (link to home) > section > current page. */
+  /* Section index: one path segment (e.g. /cheat-sheets), no link to home. */
+  if (isIndexPage)
+    return [{ pathSlug: sectionSlug, href: "" }];
+
+  /* Subpage: section (link to index) + current page slug. */
+  const titleSlug = slugify(title);
   return [
-    { label: "/", href: homeHref },
-    { label: sectionLabel, href: "index.html" },
-    { label: title, href: "" },
+    { pathSlug: sectionSlug, href: "index.html" },
+    { pathSlug: titleSlug || "page", href: "" },
   ];
 }
 
 function renderBreadcrumbHtml(outputPath, title) {
   const items = getBreadcrumb(outputPath, title);
   if (items.length === 0) return "";
-  const parts = [];
+  const prompt = 'mbuelow@dev:';
+  const pathParts = [];
   for (const item of items) {
-    if (parts.length > 0) parts.push('<span class="breadcrumb-sep">›</span>');
     if (item.href)
-      parts.push(
-        `<a href="${escapeHtml(item.href)}" class="breadcrumb-link">${escapeHtml(item.label)}</a>`
+      pathParts.push(
+        `<a href="${escapeHtml(item.href)}" class="breadcrumb-link">${escapeHtml(item.pathSlug)}</a>`
       );
     else
-      parts.push(
-        `<span class="breadcrumb-current">${escapeHtml(item.label)}</span>`
+      pathParts.push(
+        `<span class="breadcrumb-current">${escapeHtml(item.pathSlug)}</span>`
       );
   }
-  return `<nav class="breadcrumb" aria-label="Breadcrumb">${parts.join("")}</nav>`;
+  const pathStr = pathParts.join('<span class="breadcrumb-sep">/</span>');
+  return `<nav class="breadcrumb breadcrumb-cli" aria-label="Breadcrumb"><span class="breadcrumb-prompt">${prompt}</span><span class="breadcrumb-sep">/</span>${pathStr}<span class="breadcrumb-prompt">$</span></nav>`;
 }
 
 function writePage(outputPath, title, bodyHtml, active = {}) {
@@ -133,6 +150,7 @@ function writePage(outputPath, title, bodyHtml, active = {}) {
     body: bodyHtml,
     active,
     breadcrumb: breadcrumbHtml,
+    version: globalVersion,
   });
   fs.writeFileSync(outFile, html, "utf8");
 }
@@ -141,8 +159,17 @@ function build() {
   if (fs.existsSync(DIST)) fs.rmSync(DIST, { recursive: true });
   ensureDir(DIST);
 
+  const deploymentPath = path.join(ROOT, "deployment.json");
+  globalVersion = "";
+  if (fs.existsSync(deploymentPath)) {
+    try {
+      const deployment = JSON.parse(fs.readFileSync(deploymentPath, "utf8"));
+      globalVersion = deployment.version ?? "";
+    } catch (_) {}
+  }
+
   // Copy assets
-  for (const sub of ["css", "js", "fonts"]) {
+  for (const sub of ["css", "js", "fonts", "images"]) {
     const src = path.join(ASSETS, sub);
     const dest = path.join(DIST, sub);
     if (fs.existsSync(src)) {
@@ -196,37 +223,58 @@ function build() {
   blogIndexBody += "</ul>";
   writePage("blog/index.html", "Blog", blogIndexBody, { activeBlog: true });
 
-  // Projects index
+  // Projects index + individual project pages
   const projectsDir = path.join(CONTENT, "projects");
   const projectFiles = fs.existsSync(projectsDir)
     ? fs.readdirSync(projectsDir).filter((f) => f.endsWith(".md"))
     : [];
-  let projectsBody = "";
+  const projectList = [];
   for (const file of projectFiles) {
     const raw = fs.readFileSync(path.join(projectsDir, file), "utf8");
     const { meta, body } = parseFrontMatter(raw);
-    projectsBody += `<section class=\"project\"><h2>${escapeHtml(meta.title || file)}</h2>${marked.parse(body)}</section>`;
+    const slug = path.basename(file, ".md");
+    projectList.push({
+      slug,
+      title: meta.title || slug,
+      description: meta.description || body.slice(0, 200).replace(/\n/g, " ").trim() + (body.length > 200 ? "…" : ""),
+    });
+    writePage(
+      `projects/${slug}.html`,
+      meta.title || slug,
+      marked.parse(body),
+      { activeProjects: true }
+    );
   }
-  if (!projectsBody) projectsBody = "<p>No projects yet.</p>";
-  writePage("projects/index.html", "Projects", projectsBody, {
+  let projectsIndexBody = "";
+  if (projectList.length === 0) {
+    projectsIndexBody = "<p>No projects yet.</p>";
+  } else {
+    projectsIndexBody = '<ul class="project-list">';
+    for (const p of projectList) {
+      projectsIndexBody += `<li class="project-item"><a href="${p.slug}.html" class="project-item-link"><span class="project-item-title">${escapeHtml(p.title)}</span></a>${p.description ? `<p class="project-item-desc">${escapeHtml(p.description)}</p>` : ""}</li>`;
+    }
+    projectsIndexBody += "</ul>";
+  }
+  writePage("projects/index.html", "Projects", projectsIndexBody, {
     activeProjects: true,
   });
 
-  // Cheat sheets index + x86, binary-ninja
-  ensureDir(path.join(DIST, "cheatsheets"));
+  // Cheat sheets index + x86, binary-ninja (output under cheat-sheets/)
+  const csPath = OUTPUT_PATH.cheatsheets;
+  ensureDir(path.join(DIST, csPath));
   const csIndexBody = `
     <ul>
       <li><a href="x86.html">x86 Instruction Set Lookup</a></li>
       <li><a href="binary-ninja.html">Binary Ninja Disassembly Symbols</a></li>
     </ul>`;
-  writePage("cheatsheets/index.html", "Cheat Sheets", csIndexBody, {
+  writePage(`${csPath}/index.html`, "Cheat Sheets", csIndexBody, {
     activeCheatsheets: true,
   });
 
   const x86Path = path.join(CONTENT, "cheatsheets", "x86.md");
   if (fs.existsSync(x86Path)) {
     const { body } = parseFrontMatter(fs.readFileSync(x86Path, "utf8"));
-    writePage("cheatsheets/x86.html", "x86 Instruction Set", marked.parse(body), {
+    writePage(`${csPath}/x86.html`, "x86 Instruction Set", marked.parse(body), {
       activeCheatsheets: true,
     });
   }
@@ -235,14 +283,15 @@ function build() {
   if (fs.existsSync(bnPath)) {
     const { body } = parseFrontMatter(fs.readFileSync(bnPath, "utf8"));
     writePage(
-      "cheatsheets/binary-ninja.html",
+      `${csPath}/binary-ninja.html`,
       "Binary Ninja Symbols",
       marked.parse(body),
       { activeCheatsheets: true }
     );
   }
 
-  // CTF index + writeups
+  // CTF index + writeups (output under ctf-challenges/)
+  const ctfPath = OUTPUT_PATH.ctf;
   const ctfDir = path.join(CONTENT, "ctf");
   const ctfFiles = fs.existsSync(ctfDir)
     ? fs.readdirSync(ctfDir).filter((f) => f.endsWith(".md"))
@@ -255,25 +304,26 @@ function build() {
     ctfIndexBody += `<li><a href="${slug}.html">${escapeHtml(meta.title || slug)}</a></li>`;
   }
   ctfIndexBody += "</ul>";
-  writePage("ctf/index.html", "CTF-Challenges", ctfIndexBody, { activeCtf: true });
+  writePage(`${ctfPath}/index.html`, "CTF Writeups", ctfIndexBody, { activeCtf: true });
 
   for (const file of ctfFiles) {
     const raw = fs.readFileSync(path.join(ctfDir, file), "utf8");
     const { meta, body } = parseFrontMatter(raw);
     const slug = path.basename(file, ".md");
-    writePage(`ctf/${slug}.html`, meta.title || slug, marked.parse(body), {
+    writePage(`${ctfPath}/${slug}.html`, meta.title || slug, marked.parse(body), {
       activeCtf: true,
     });
   }
 
-  // Reversing
+  // RE Tips (output under reversing/)
+  const rePath = OUTPUT_PATH["re-tips"];
   const reTipsPath = path.join(CONTENT, "re-tips.md");
   const reTipsBody = fs.existsSync(reTipsPath)
     ? marked.parse(
         parseFrontMatter(fs.readFileSync(reTipsPath, "utf8")).body
       )
     : "<p>Tips coming soon.</p>";
-  writePage("re-tips/index.html", "Reversing", reTipsBody, {
+  writePage(`${rePath}/index.html`, "RE Tips & Tricks", reTipsBody, {
     activeReTips: true,
   });
 

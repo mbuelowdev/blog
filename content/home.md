@@ -10,4 +10,4 @@ Security-focused reverse engineering and low-level tinkering.
 
 **Links:** [GitHub](https://github.com/mbuelowdev) · LinkedIn (coming soon)
 
-Quick links: [Blog](blog/index.html) · [Projects](projects/index.html) · [Cheat Sheets](cheatsheets/index.html) · [CTF-Challenges](ctf/index.html) · [Reversing](re-tips/index.html) · [Downloads](downloads/index.html) · [Contact](contact/index.html).
+Quick links: [Blog](blog/index.html) · [Projects](projects/index.html) · [Cheat Sheets](cheat-sheets/index.html) · [CTF-Challenges](ctf-challenges/index.html) · [Reversing](reversing/index.html) · [Downloads](downloads/index.html) · [Contact](contact/index.html).
