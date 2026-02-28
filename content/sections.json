@@ -3,8 +3,8 @@
     { "order": 0, "id": "home", "label": "Home", "contentDir": null, "outputPath": "", "navGroup": "Main" },
     { "order": 1, "id": "blog", "label": "Blog", "contentDir": "blog", "outputPath": "blog", "navGroup": "Main" },
     { "order": 2, "id": "projects", "label": "Projects", "contentDir": "projects", "outputPath": "projects", "navGroup": "Main" },
-    { "order": 3, "id": "cheatsheets", "label": "Cheat Sheets", "contentDir": "cheatsheets", "outputPath": "cheat-sheets", "navGroup": "Reverse Engineering" },
-    { "order": 4, "id": "ctf", "label": "CTF-Challenges", "contentDir": "ctf", "outputPath": "ctf-challenges", "navGroup": "Reverse Engineering" },
+    { "order": 3, "id": "cheatsheets", "label": "Cheat Sheets", "contentDir": "cheat-sheets", "outputPath": "cheat-sheets", "navGroup": "Reverse Engineering" },
+    { "order": 4, "id": "ctf", "label": "CTF-Challenges", "contentDir": "ctf-challenges", "outputPath": "ctf-challenges", "navGroup": "Reverse Engineering" },
     { "order": 5, "id": "downloads", "label": "Downloads", "contentDir": "downloads", "outputPath": "downloads", "navGroup": "Other" },
     { "order": 6, "id": "contact", "label": "Contact", "contentDir": null, "outputPath": "contact", "navGroup": "Other" }
   ]
