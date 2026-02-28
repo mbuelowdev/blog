@@ -1,4 +1,7 @@
 (function () {
+  var SITE_TITLE = 'mbuelow.dev';
+  var PROMPT_ROOT = 'mbuelow@dev:~$ ';
+
   var toggle = document.getElementById('nav-toggle');
   var sidebar = document.getElementById('sidebar');
   if (toggle && sidebar) {
@@ -26,7 +29,7 @@
     var pathname = window.location.pathname.replace(/\/index\.html$/i, '').replace(/\/$/, '') || '';
     var segments = pathname.split('/').filter(Boolean);
     var segment = segments.length ? segments[segments.length - 1] : '';
-    return segment ? 'mbuelow@dev:~/' + segment + '$ ' : 'mbuelow@dev:~$ ';
+    return segment ? 'mbuelow@dev:~/' + segment + '$ ' : PROMPT_ROOT;
   }
 
   function parseFrontMatter(text) {
@@ -69,6 +72,10 @@
   if (catFile) {
     var prompt = getPromptFromPathname();
     var container = document.querySelector('.content');
+    if (!window.CAT_WHITELIST || window.CAT_WHITELIST.indexOf(catFile) === -1) {
+      if (container) container.innerHTML = renderCatBlock(prompt, catFile, null);
+      return;
+    }
     fetch(catFile)
       .then(function (res) {
         if (!res.ok) throw new Error('Not found');
@@ -78,7 +85,7 @@
         var parsed = parseFrontMatter(text);
         var title = parsed.meta.title || catFile.replace(/\.md$/, '');
         if (document.title.indexOf('|') > -1) {
-          document.title = title + ' | mbuelow.dev';
+          document.title = title + ' | ' + SITE_TITLE;
         }
         var size = new Blob([text]).size;
         var mtime = new Date();

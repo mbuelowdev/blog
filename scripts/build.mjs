@@ -9,6 +9,12 @@ const TEMPLATES = path.join(ROOT, "templates");
 const ASSETS = path.join(ROOT, "assets");
 const DIST = path.join(ROOT, "dist");
 
+const PROMPT_ROOT = "mbuelow@dev:~$ ";
+const PWD_ROOT = "/home/mbuelow";
+const DEFAULT_LS_DATE = "Mar 12 14:23";
+const DEFAULT_LS_DATE_PARENT = "Jan  8 09:41";
+const MAIN_CLASS_TERMINAL = "main--home-terminal";
+
 let globalVersion = "";
 
 const LAST_REFRESHED = new Date().toISOString().replace("T", " ").slice(0, 19);
@@ -37,12 +43,27 @@ function formatLsDate(date) {
   return `${m} ${day} ${time}`;
 }
 
+/** Standard . and .. directory entries for ls -al. */
+function dotEntries(pwdDate = DEFAULT_LS_DATE, parentDate = DEFAULT_LS_DATE_PARENT) {
+  return [
+    { name: ".", dir: true, dateStr: pwdDate },
+    { name: "..", dir: true, dateStr: parentDate },
+  ];
+}
+
+/** Prompt and pwd for a section (by outputPath). */
+function sectionPromptAndPwd(outputPath) {
+  const prompt = outputPath ? `mbuelow@dev:~/${outputPath}$ ` : PROMPT_ROOT;
+  const pwd = outputPath ? `${PWD_ROOT}/${outputPath}` : PWD_ROOT;
+  return { prompt, pwd };
+}
+
 /** Entries: { name, size?, mtime?, href?, dir? } — include . and .. for dirs. */
 function renderDirectoryListing(prompt, pwd, entries) {
   const lsLines = entries.map((e) => {
     const perm = e.dir ? "drwxr-xr-x" : "-rw-r--r--";
     const size = e.dir ? "4096" : String(e.size ?? 0).padStart(5);
-    const date = e.mtime ? formatLsDate(e.mtime) : (e.dateStr ?? "Mar 12 14:23");
+    const date = e.mtime ? formatLsDate(e.mtime) : (e.dateStr ?? DEFAULT_LS_DATE);
     const namePart = e.href != null
       ? `<a href="${escapeHtml(e.href)}" class="home-terminal-file-link">${escapeHtml(e.name)}</a>`
       : escapeHtml(e.name);
@@ -61,17 +82,22 @@ ${lsLines.join("\n")}
 
 function renderLayout(opts) {
   let html = fs.readFileSync(path.join(TEMPLATES, "layout.html"), "utf8");
-  html = html.replace(/\{\{title\}\}/g, opts.title || "mbuelow.dev");
-  html = html.replace(/\{\{base\}\}/g, opts.base ?? "");
-  html = html.replace(/\{\{lastRefreshed\}\}/g, opts.lastRefreshed ?? LAST_REFRESHED);
-  /* Resolve images/ and links to images/ relative to current page (base). */
+  const placeholders = [
+    ["title", opts.title || "mbuelow.dev"],
+    ["base", opts.base ?? ""],
+    ["lastRefreshed", opts.lastRefreshed ?? LAST_REFRESHED],
+    ["version", opts.version ?? ""],
+    ["mainClass", opts.mainClass ?? ""],
+  ];
+  for (const [key, value] of placeholders) {
+    html = html.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), value);
+  }
   let body = opts.body ?? "";
   body = body.replace(/\b(src|href)="images\//g, (_, attr) => `${attr}="${opts.base ?? ""}images/`);
   html = html.replace(/\{\{\{body\}\}\}/g, body);
   html = html.replace(/\{\{\{breadcrumb\}\}\}/g, opts.breadcrumb ?? "");
-  html = html.replace(/\{\{version\}\}/g, opts.version ?? "");
-  html = html.replace(/\{\{mainClass\}\}/g, opts.mainClass ?? "");
   html = html.replace(/\{\{\{nav\}\}\}/g, opts.nav ?? "");
+  html = html.replace(/\{\{\{catWhitelist\}\}\}/g, JSON.stringify(opts.catWhitelist ?? []));
   return html;
 }
 
@@ -106,14 +132,13 @@ function renderNavHtml(sections, activeSectionId, base) {
   return parts.join("\n      ");
 }
 
-function getBreadcrumb(outputPath, title) {
+function getBreadcrumb(outputPath) {
   const segments = outputPath.split("/").filter(Boolean);
   if (segments.length === 0) return [];
   if (segments.length === 1 && segments[0] === "index.html")
     return [{ pathSlug: "~", href: "" }];
   const sectionSlug = segments[0];
-  const isIndexPage = segments[1] === "index.html";
-  if (isIndexPage)
+  if (segments[1] === "index.html")
     return [{ pathSlug: sectionSlug, href: "" }];
   return [
     { pathSlug: sectionSlug, href: "index.html" },
@@ -121,8 +146,8 @@ function getBreadcrumb(outputPath, title) {
   ];
 }
 
-function renderBreadcrumbHtml(outputPath, title) {
-  const items = getBreadcrumb(outputPath, title);
+function renderBreadcrumbHtml(outputPath) {
+  const items = getBreadcrumb(outputPath);
   if (items.length === 0) return "";
   if (items.length === 1 && items[0].pathSlug === "~") {
     return `<nav class="breadcrumb breadcrumb-cli" aria-label="Breadcrumb"><span class="breadcrumb-prompt">mbuelow@dev:~</span><span class="breadcrumb-prompt">$</span></nav>`;
@@ -143,11 +168,11 @@ function renderBreadcrumbHtml(outputPath, title) {
   return `<nav class="breadcrumb breadcrumb-cli" aria-label="Breadcrumb"><span class="breadcrumb-prompt">${prompt}</span><span class="breadcrumb-sep">/</span>${pathStr}<span class="breadcrumb-prompt">$</span></nav>`;
 }
 
-function writePage(sections, outputPath, title, bodyHtml, activeSectionId, mainClass = "") {
+function writePage(sections, outputPath, title, bodyHtml, activeSectionId, mainClass = "", catWhitelist = []) {
   const outFile = path.join(DIST, outputPath);
   ensureDir(path.dirname(outFile));
   const base = getBase(outputPath);
-  const breadcrumbHtml = renderBreadcrumbHtml(outputPath, title);
+  const breadcrumbHtml = renderBreadcrumbHtml(outputPath);
   const nav = renderNavHtml(sections, activeSectionId, base);
   const html = renderLayout({
     title,
@@ -158,6 +183,7 @@ function writePage(sections, outputPath, title, bodyHtml, activeSectionId, mainC
     breadcrumb: breadcrumbHtml,
     version: globalVersion,
     mainClass,
+    catWhitelist,
   });
   fs.writeFileSync(outFile, html, "utf8");
 }
@@ -177,6 +203,13 @@ function build() {
 
   // Load config
   const sections = loadSections();
+  const catWhitelist = [];
+  for (const s of sections) {
+    if (s.id === "home" || s.id === "contact" || s.id === "downloads" || !s.contentDir) continue;
+    const dir = path.join(CONTENT, s.contentDir);
+    if (!fs.existsSync(dir)) continue;
+    for (const name of fs.readdirSync(dir)) if (name.endsWith(".md")) catWhitelist.push(name);
+  }
 
   // Copy assets
   for (const sub of ["css", "js", "fonts", "images"]) {
@@ -196,12 +229,11 @@ function build() {
     href: s.outputPath === "" ? "index.html" : `${s.outputPath}/index.html`,
   }));
   const homeEntries = [
-    { name: ".", dir: true, dateStr: "Mar 12 14:23" },
-    { name: "..", dir: true, dateStr: "Jan  8 09:41" },
-    ...homeSectionDirs.map((d) => ({ name: d.name, dir: true, size: 4096, dateStr: "Mar 12 14:23", href: d.href })),
+    ...dotEntries(),
+    ...homeSectionDirs.map((d) => ({ name: d.name, dir: true, size: 4096, dateStr: DEFAULT_LS_DATE, href: d.href })),
   ];
   const homeLsLinesStr = homeEntries.map((e) => {
-    const date = e.dateStr ?? "Mar 12 14:23";
+    const date = e.dateStr ?? DEFAULT_LS_DATE;
     const namePart = e.href != null ? `<a href="${escapeHtml(e.href)}" class="home-terminal-file-link">${escapeHtml(e.name)}</a>` : escapeHtml(e.name);
     return `drwxr-xr-x  2 mbuelow mbuelow  4096 ${date} ${namePart}`;
   }).join("\n");
@@ -209,16 +241,16 @@ function build() {
 <pre class="home-terminal-banner">Linux mbuelow-dev 6.1.0-1-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.1.0-1 (2023-01-07) x86_64
 
 Last login: Fri Jul  7 07:00:07 2023 from 192.168.6.66</pre>
-<pre class="home-terminal-session"><span class="home-terminal-prompt">mbuelow@dev:~$ </span>
-<span class="home-terminal-prompt">mbuelow@dev:~$ </span>
-<span class="home-terminal-prompt">mbuelow@dev:~$ </span>pwd
-/home/mbuelow
-<span class="home-terminal-prompt">mbuelow@dev:~$ </span>ls -al
+<pre class="home-terminal-session"><span class="home-terminal-prompt">${PROMPT_ROOT}</span>
+<span class="home-terminal-prompt">${PROMPT_ROOT}</span>
+<span class="home-terminal-prompt">${PROMPT_ROOT}</span>pwd
+${PWD_ROOT}
+<span class="home-terminal-prompt">${PROMPT_ROOT}</span>ls -al
 total ${Math.max(8, homeEntries.length)}
 ${homeLsLinesStr}
-<span class="home-terminal-prompt">mbuelow@dev:~$ </span><span class="home-terminal-cursor"></span></pre>
+<span class="home-terminal-prompt">${PROMPT_ROOT}</span><span class="home-terminal-cursor"></span></pre>
 </div>`;
-  writePage(sections, "index.html", "Home", homeTerminalBody, "home", "main--home-terminal");
+  writePage(sections, "index.html", "Home", homeTerminalBody, "home", MAIN_CLASS_TERMINAL, catWhitelist);
 
   // Sections with contentDir and .md files: one index.html + copy .md to dist
   for (const section of sections) {
@@ -226,11 +258,9 @@ ${homeLsLinesStr}
     const contentDir = section.contentDir ? path.join(CONTENT, section.contentDir) : null;
     if (!contentDir || !fs.existsSync(contentDir)) continue;
     const mdFiles = fs.readdirSync(contentDir).filter((f) => f.endsWith(".md"));
-    const prompt = section.outputPath ? `mbuelow@dev:~/${section.outputPath}$ ` : "mbuelow@dev:~$ ";
-    const pwd = section.outputPath ? `/home/mbuelow/${section.outputPath}` : "/home/mbuelow";
+    const { prompt, pwd } = sectionPromptAndPwd(section.outputPath);
     const entries = [
-      { name: ".", dir: true, dateStr: "Mar 12 14:23" },
-      { name: "..", dir: true, dateStr: "Jan  8 09:41" },
+      ...dotEntries(),
       ...mdFiles.map((name) => {
         const fullPath = path.join(contentDir, name);
         const stat = fs.statSync(fullPath);
@@ -239,7 +269,7 @@ ${homeLsLinesStr}
     ];
     const body = renderDirectoryListing(prompt, pwd, entries);
     ensureDir(path.join(DIST, section.outputPath));
-    writePage(sections, `${section.outputPath}/index.html`, section.label, body, section.id, "main--home-terminal");
+    writePage(sections, `${section.outputPath}/index.html`, section.label, body, section.id, MAIN_CLASS_TERMINAL, catWhitelist);
     for (const name of mdFiles) {
       fs.copyFileSync(path.join(contentDir, name), path.join(DIST, section.outputPath, name));
     }
@@ -263,12 +293,12 @@ ${homeLsLinesStr}
   }
   downloadLsEntries.sort((a, b) => a.name.localeCompare(b.name));
   const downloadEntries = [
-    { name: ".", dir: true, dateStr: "Mar 12 14:23" },
-    { name: "..", dir: true, dateStr: "Jan  8 09:41" },
+    ...dotEntries(),
     ...downloadLsEntries.map((e) => ({ name: e.name, size: e.size, mtime: e.mtime, href: `files/${e.name}` })),
   ];
-  const downloadsTerminalBody = renderDirectoryListing("mbuelow@dev:~/downloads$ ", "/home/mbuelow/downloads", downloadEntries);
-  writePage(sections, "downloads/index.html", "Downloads", downloadsTerminalBody, "downloads", "main--home-terminal");
+  const { prompt: downloadsPrompt, pwd: downloadsPwd } = sectionPromptAndPwd("downloads");
+  const downloadsTerminalBody = renderDirectoryListing(downloadsPrompt, downloadsPwd, downloadEntries);
+  writePage(sections, "downloads/index.html", "Downloads", downloadsTerminalBody, "downloads", MAIN_CLASS_TERMINAL, catWhitelist);
 
   // Contact: pwd + ls with symlinks
   ensureDir(path.join(DIST, "contact"));
@@ -284,15 +314,16 @@ ${homeLsLinesStr}
         `lrwxrwxrwx  1 mbuelow mbuelow  ${String(s.size).padStart(2)} Feb 28 12:00 ${escapeHtml(s.name)} -> <a href="${escapeHtml(s.target)}" class="home-terminal-file-link" rel="noopener noreferrer">${escapeHtml(s.target)}</a>`
     ),
   ];
+  const { prompt: contactPrompt, pwd: contactPwd } = sectionPromptAndPwd("contact");
   const contactTerminalBody = `<div class="home-terminal">
-<pre class="home-terminal-session"><span class="home-terminal-prompt">mbuelow@dev:~/contact$ </span>pwd
-/home/mbuelow/contact
-<span class="home-terminal-prompt">mbuelow@dev:~/contact$ </span>ls -al
+<pre class="home-terminal-session"><span class="home-terminal-prompt">${contactPrompt}</span>pwd
+${contactPwd}
+<span class="home-terminal-prompt">${contactPrompt}</span>ls -al
 total ${contactSymlinks.length}
 ${contactLsLines.join("\n")}
-<span class="home-terminal-prompt">mbuelow@dev:~/contact$ </span><span class="home-terminal-cursor"></span></pre>
+<span class="home-terminal-prompt">${contactPrompt}</span><span class="home-terminal-cursor"></span></pre>
 </div>`;
-  writePage(sections, "contact/index.html", "Contact", contactTerminalBody, "contact", "main--home-terminal");
+  writePage(sections, "contact/index.html", "Contact", contactTerminalBody, "contact", MAIN_CLASS_TERMINAL, catWhitelist);
 
   console.log("Build done. Output in dist/");
 }
