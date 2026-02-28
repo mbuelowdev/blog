@@ -21,7 +21,7 @@ This is a static site generator (personal portfolio/blog for mbuelow.dev). It co
 
 ### Notes
 
-- There are no automated tests, no linter, and no TypeScript in this project. The only runtime dependency is `marked` (Markdown parser).
+- There are no automated tests, no linter, and no TypeScript in this project. The build script has no runtime dependencies (Markdown is shown as raw text in the CLI-style pages).
 - The `dist/` directory is gitignored; always run `npm run build` before serving.
 - The build script uses ESM (`"type": "module"` in `package.json`), requiring Node.js 20+.
 - **Images in content**: Use HTML `<img>` in Markdown, not `![alt](url)`, so size can be controlled (e.g. `width="400"` or `style="max-width: 50%;"`). Use `src="images/filename.png"`; the build rewrites it per-page. Put image files in `assets/images/`.
