@@ -29,6 +29,27 @@ function formatLsDate(date) {
   return `${m} ${day} ${time}`;
 }
 
+function makeSingleFileCliBody(fullPath, filename, linkHref, prompt, escapeHtml) {
+  if (!fs.existsSync(fullPath)) {
+    return `<div class="home-terminal">
+<pre class="home-terminal-session"><span class="home-terminal-prompt">${prompt}</span>ls -al ${escapeHtml(filename)}
+ls: cannot access '${escapeHtml(filename)}': No such file or directory
+<span class="home-terminal-prompt">${prompt}</span><span class="home-terminal-cursor"></span></pre>
+</div>`;
+  }
+  const rawContent = fs.readFileSync(fullPath, "utf8");
+  const stat = fs.statSync(fullPath);
+  const lsLine = `-rw-r--r--  1 mbuelow mbuelow ${String(stat.size).padStart(5)} ${formatLsDate(stat.mtime)} <a href="${escapeHtml(linkHref)}" class="home-terminal-file-link">${escapeHtml(filename)}</a>`;
+  const escapedContent = escapeHtml(rawContent);
+  return `<div class="home-terminal">
+<pre class="home-terminal-session"><span class="home-terminal-prompt">${prompt}</span>ls -al ${escapeHtml(filename)}
+${lsLine}
+<span class="home-terminal-prompt">${prompt}</span>cat ${escapeHtml(filename)}
+${escapedContent}
+<span class="home-terminal-prompt">${prompt}</span><span class="home-terminal-cursor"></span></pre>
+</div>`;
+}
+
 function parseFrontMatter(raw) {
   const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
   if (!match) return { meta: {}, body: raw };
@@ -260,13 +281,20 @@ ${homeLsLinesStr}
   }
   blogLsEntries.sort((a, b) => a.name.localeCompare(b.name));
   for (const p of posts) {
-    const raw = fs.readFileSync(path.join(blogDir, `${p.slug}.md`), "utf8");
-    const { meta, body } = parseFrontMatter(raw);
+    const fullPath = path.join(blogDir, `${p.slug}.md`);
+    const cliBody = makeSingleFileCliBody(
+      fullPath,
+      `${p.slug}.md`,
+      `${p.slug}.html`,
+      "mbuelow@dev:~/blog$ ",
+      escapeHtml
+    );
     writePage(
       `blog/${p.slug}.html`,
-      meta.title || p.slug,
-      marked.parse(body),
-      { activeBlog: true }
+      p.title,
+      cliBody,
+      { activeBlog: true },
+      "main--home-terminal"
     );
   }
   posts.sort((a, b) => (b.date > a.date ? 1 : -1));
@@ -319,13 +347,20 @@ ${blogLsLines.join("\n")}
   }
   projectLsEntries.sort((a, b) => a.name.localeCompare(b.name));
   for (const p of projectList) {
-    const raw = fs.readFileSync(path.join(projectsDir, `${p.slug}.md`), "utf8");
-    const { meta, body } = parseFrontMatter(raw);
+    const fullPath = path.join(projectsDir, `${p.slug}.md`);
+    const cliBody = makeSingleFileCliBody(
+      fullPath,
+      `${p.slug}.md`,
+      `${p.slug}.html`,
+      "mbuelow@dev:~/projects$ ",
+      escapeHtml
+    );
     writePage(
       `projects/${p.slug}.html`,
-      meta.title || p.slug,
-      marked.parse(body),
-      { activeProjects: true }
+      p.title,
+      cliBody,
+      { activeProjects: true },
+      "main--home-terminal"
     );
   }
 
@@ -393,12 +428,21 @@ ${csLsLines.join("\n")}
   }, "main--home-terminal");
 
   for (const e of csLsEntries) {
-    const raw = fs.readFileSync(path.join(csDir, e.name), "utf8");
-    const { meta, body } = parseFrontMatter(raw);
-    const title = meta.title || e.slug;
-    writePage(`${csPath}/${e.slug}.html`, title, marked.parse(body), {
+    const fullPath = path.join(csDir, e.name);
+    const title = (() => {
+      const { meta } = parseFrontMatter(fs.readFileSync(fullPath, "utf8"));
+      return meta.title || e.slug;
+    })();
+    const cliBody = makeSingleFileCliBody(
+      fullPath,
+      e.name,
+      `${e.slug}.html`,
+      "mbuelow@dev:~/cheat-sheets$ ",
+      escapeHtml
+    );
+    writePage(`${csPath}/${e.slug}.html`, title, cliBody, {
       activeCheatsheets: true,
-    });
+    }, "main--home-terminal");
   }
 
   // CTF index + writeups (output under ctf-challenges/) — CLI style
@@ -440,11 +484,21 @@ ${ctfLsLines.join("\n")}
   writePage(`${ctfPath}/index.html`, "CTF Writeups", ctfTerminalBody, { activeCtf: true }, "main--home-terminal");
 
   for (const e of ctfLsEntries) {
-    const raw = fs.readFileSync(path.join(ctfDir, e.name), "utf8");
-    const { meta, body } = parseFrontMatter(raw);
-    writePage(`${ctfPath}/${e.slug}.html`, meta.title || e.slug, marked.parse(body), {
+    const fullPath = path.join(ctfDir, e.name);
+    const title = (() => {
+      const { meta } = parseFrontMatter(fs.readFileSync(fullPath, "utf8"));
+      return meta.title || e.slug;
+    })();
+    const cliBody = makeSingleFileCliBody(
+      fullPath,
+      e.name,
+      `${e.slug}.html`,
+      "mbuelow@dev:~/ctf-challenges$ ",
+      escapeHtml
+    );
+    writePage(`${ctfPath}/${e.slug}.html`, title, cliBody, {
       activeCtf: true,
-    });
+    }, "main--home-terminal");
   }
 
   // Reversing: CLI style (ls -al reversing.md, then cat reversing.md with raw markdown)
