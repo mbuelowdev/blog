@@ -11,7 +11,7 @@ jobs:
     uses: mbuelowdev/ssh-docker-deployment/.github/workflows/build-and-deploy.yml@master
     with:
       config_path: './deployment.json'
-      discord_channel_id: '1422953866223288381'
+      discord_channel_id: '1461803674144735252'
       deployment_user: 'root'
       deployment_host: 'mbuelow.dev'
     secrets:
