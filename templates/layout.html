@@ -8,7 +8,10 @@
   <link rel="stylesheet" href="{{base}}css/syntax.css" />
 </head>
 <body>
-  <button type="button" class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <div class="topbar">
+    <button type="button" class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+    <div class="breadcrumb-mobile-wrap">{{{breadcrumb}}}</div>
+  </div>
   <aside class="sidebar" id="sidebar">
     <nav class="nav">
       <a href="{{base}}index.html" class="nav-link{{#activeHome}} active{{/activeHome}}">Home</a>
@@ -25,7 +28,7 @@
     <p class="sidebar-version">v{{version}}</p>
   </aside>
   <main class="main {{mainClass}}">
-    {{{breadcrumb}}}
+    <div class="breadcrumb-desktop-wrap">{{{breadcrumb}}}</div>
     <header class="page-header">
       <h1 class="page-title">{{title}}</h1>
       <p class="last-refreshed">Last refreshed: {{lastRefreshed}}</p>

@@ -59,12 +59,13 @@ body {
 /* Nav toggle - visible only on mobile */
 .nav-toggle {
   display: none;
-  position: fixed;
-  top: 0.75rem;
-  left: 0.75rem;
-  z-index: 1001;
+  position: relative;
+  top: auto;
+  left: auto;
+  z-index: 1;
   width: 2.5rem;
   height: 2.5rem;
+  flex-shrink: 0;
   border: 1px solid var(--border);
   background: var(--bg-sidebar);
   color: var(--accent-green);
@@ -75,6 +76,11 @@ body {
 
 .nav-toggle:hover {
   background: var(--border);
+}
+
+/* Topbar: mobile only, hamburger + breadcrumb */
+.topbar {
+  display: none;
 }
 
 /* Sidebar - desktop */
@@ -190,6 +196,7 @@ body {
   user-select: text;
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
   padding: 1rem 1.25rem;
   margin: 0;
   background: var(--bg-dark);
@@ -203,6 +210,7 @@ body {
   flex: 0 0 auto;
   margin: 0;
   padding: 0;
+  min-width: 0;
   font-family: inherit;
   font-size: inherit;
   color: inherit;
@@ -210,6 +218,9 @@ body {
   border: none;
   border-radius: 0;
   overflow: visible;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .home-terminal-cursor {
@@ -226,6 +237,14 @@ body {
 }
 
 /* Breadcrumb - IDE-style hierarchy */
+.breadcrumb-desktop-wrap {
+  display: block;
+}
+
+.breadcrumb-mobile-wrap {
+  display: none;
+}
+
 .breadcrumb {
   font-family: var(--font-mono);
   font-size: 0.8rem;
@@ -500,19 +519,51 @@ body {
     flex-direction: column;
   }
 
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    position: sticky;
+    top: 0;
+    z-index: 1001;
+    padding: 0.75rem 1rem;
+    background: var(--bg-dark);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+    min-height: 4rem;
+    box-sizing: border-box;
+  }
+
   .nav-toggle {
     display: block;
   }
 
+  .breadcrumb-mobile-wrap {
+    display: block;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .breadcrumb-mobile-wrap .breadcrumb {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+
+  .breadcrumb-desktop-wrap {
+    display: none;
+  }
+
   .sidebar {
     position: fixed;
-    top: 0;
+    top: 4rem;
     left: 0;
-    height: 100vh;
+    height: calc(100vh - 4rem);
     z-index: 1000;
     transform: translateX(-100%);
     transition: transform 0.2s ease-out;
     box-shadow: 4px 0 20px rgba(0,0,0,0.4);
+    padding-top: 1rem;
   }
 
   .sidebar.open {
@@ -520,11 +571,16 @@ body {
   }
 
   .main {
-    padding: 3.5rem 1rem 2rem;
+    padding: 1rem 1rem 2rem;
     margin-left: 0;
   }
 
   .page-title {
     font-size: 1.4rem;
+  }
+
+  .home-terminal {
+    padding: 0.75rem 1rem;
+    font-size: 0.8rem;
   }
 }
