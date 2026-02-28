@@ -134,7 +134,8 @@ function slugify(text) {
 function getBreadcrumb(outputPath, title) {
   const segments = outputPath.split("/").filter(Boolean);
   if (segments.length === 0) return [];
-  if (segments.length === 1 && segments[0] === "index.html") return [];
+  if (segments.length === 1 && segments[0] === "index.html")
+    return [{ pathSlug: "~", href: "" }];
 
   const sectionSlug = segments[0];
   const isIndexPage = segments[1] === "index.html";
@@ -154,7 +155,10 @@ function getBreadcrumb(outputPath, title) {
 function renderBreadcrumbHtml(outputPath, title) {
   const items = getBreadcrumb(outputPath, title);
   if (items.length === 0) return "";
-  const prompt = 'mbuelow@dev:';
+  if (items.length === 1 && items[0].pathSlug === "~") {
+    return `<nav class="breadcrumb breadcrumb-cli" aria-label="Breadcrumb"><span class="breadcrumb-prompt">mbuelow@dev:~</span><span class="breadcrumb-prompt">$</span></nav>`;
+  }
+  const prompt = "mbuelow@dev:~";
   const pathParts = [];
   for (const item of items) {
     if (item.href)
